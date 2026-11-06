@@ -1,4 +1,4 @@
-# Test manuel de la clé API-Football (la clé reste dans le coffre-fort GitHub et n'est jamais affichée).
+# Test manuel de la collecte API-Football (la clé reste dans le coffre-fort GitHub et n'est jamais affichée).
 name: Test API-Football
 
 on:
@@ -7,15 +7,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     env:
       TZ: Europe/Paris
+      FEUILLE_RESULTATS: en-ligne
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Test
+      - name: Collecte
         env:
           APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
-        run: python outils/test_api.py
+        run: python collecte_api.py
+      - name: Résultat (probabilités dérivées, conservé 1 jour, pour la mise au point)
+        uses: actions/upload-artifact@v4
+        with:
+          name: collecte
+          path: cache/api/
+          retention-days: 1
