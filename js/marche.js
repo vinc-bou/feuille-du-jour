@@ -75,13 +75,20 @@ App.marche = (() => {
     return { p1, pX, p2, pO, books, pin: x.markets.some(mk => mk.pin) };
   }
 
+  /* ---------- Matchs que Winamax ne propose jamais ---------- */
+  // Compétitions russes et biélorusses (interdites par l'ANJ depuis 2022), équipes de jeunes et réserves
+  const BANNED = ['russia', 'belarus'];
+  const YOUTH = /\bu ?-?(1[5-9]|2[0-3])\b|youth|junior|juvenil|reserve|primavera|\bsub-?(1[5-9]|2[0-3])\b/i;
+  const horsWinamax = x => BANNED.includes(t.norm(x.league.country || '')) || YOUTH.test(`${x.league.name} ${x.h.name} ${x.a.name}`);
+
   /* ---------- Construction des analyses « marché » ---------- */
   function build(data, W, existing) {
     const out = [];
     if (!data || !data.sports) return out;
     Object.entries(data.sports).forEach(([sport, list]) => {
       list.forEach(x => {
-        if (x.status !== 'NS' || x.ts < W.start || x.ts >= W.end || !x.markets.length || x.ts < Date.now()) return;
+        if (horsWinamax(x)) return;
+        if (x.status !== 'NS'|| x.ts < W.start || x.ts >= W.end || !x.markets.length || x.ts < Date.now()) return;
         const sp = SPORT[sport];
         // déjà analysé en détail (ESPN) ?
         if (existing.some(a => a.sport === sp && a.match.h && Math.abs(a.match.ts - x.ts) < 3 * 3600000 && same(a.match.h.name, x.h.name) && same(a.match.a.name, x.a.name))) return;
@@ -142,5 +149,8 @@ App.marche = (() => {
     return null;
   }
 
-  return { load, build, marketFor, settle, SPORT };
+  // pour les analyses déjà enregistrées (analyse « marché » d'un match jamais proposé par Winamax)
+  const exclu = a => a.analysisType === 'marche' && a.match && a.match.h &&
+    horsWinamax({ league: { country: a.country, name: a.comp }, h: a.match.h, a: a.match.a });
+  return { load, build, marketFor, settle, exclu, SPORT };
 })();

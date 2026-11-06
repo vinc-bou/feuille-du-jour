@@ -94,6 +94,11 @@
 - Combinés grosse cote 5 / 10 / 15 (engine.hardCombos) : version sûre (paris les plus fiables) et courte
   (cotes 1,40-2,30), 1 pari par match, 2 matchs max par championnat ; suivis dans l'historique (kind 'hard').
 
+## Filtre « jamais sur Winamax » (2026-11-06, V1.9)
+- Exclus (collecte_api.hors_winamax + marche.js horsWinamax/exclu, aussi sur les analyses déjà enregistrées) :
+  pays Russia / Belarus (ANJ depuis 2022, KHL et VTB retirés des priorités), jeunes et réserves (U15-U23, Sub-20,
+  Youth, Junior, Primavera, Reserve). Attention : pas de  dans un heredoc Python non brut (devient ).
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.

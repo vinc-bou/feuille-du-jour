@@ -10,6 +10,7 @@ Usage : python collecte_api.py [AAAAMMJJ]
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -31,8 +32,8 @@ SPORTS = {
 }
 # Compétitions prioritaires pour les cotes des autres sports (les plus proposées par les bookmakers français)
 PRIO = {
-    'basketball': ['euroleague', 'eurocup', 'lnb', 'pro a', 'betclic', 'acb', 'lega a', 'bbl', 'bsl', 'super league', 'nba', 'champions league', 'pro b', 'vtb', 'aba', 'nbl', 'lkl'],
-    'hockey': ['nhl', 'khl', 'shl', 'liiga', 'del', 'national league', 'ligue magnus', 'extraliga', 'ice hockey league', 'champions hockey league', 'ahl'],
+    'basketball': ['euroleague', 'eurocup', 'lnb', 'pro a', 'betclic', 'acb', 'lega a', 'bbl', 'bsl', 'super league', 'nba', 'champions league', 'pro b', 'aba', 'nbl', 'lkl'],
+    'hockey': ['nhl', 'shl', 'liiga', 'del', 'national league', 'ligue magnus', 'extraliga', 'ice hockey league', 'champions hockey league', 'ahl'],
     'handball': ['starligue', 'lidl', 'champions league', 'bundesliga', 'liga asobal', 'ehf', 'proligue'],
     'volleyball': ['ligue a', 'marmara', 'superlega', 'plusliga', 'champions league', 'cev', 'serie a1', 'bundesliga'],
     'rugby': ['top 14', 'pro d2', 'premiership', 'united rugby', 'champions cup', 'challenge cup', 'super rugby', 'six nations', 'rugby championship'],
@@ -44,11 +45,23 @@ ESPN_LEAGUES = {39, 61, 140, 135, 78, 94, 88, 144, 203, 179, 62, 40, 2, 3, 848, 
 # Ordre des pays pour choisir les matchs dont on demande les cotes (quota : ~80 matchs par jour)
 COUNTRIES = ['France', 'England', 'Spain', 'Italy', 'Germany', 'Portugal', 'Netherlands', 'Belgium', 'Turkey',
              'Scotland', 'Switzerland', 'Austria', 'Ukraine', 'Greece', 'Denmark', 'Sweden', 'Norway', 'Poland',
-             'Czech-Republic', 'Croatia', 'Serbia', 'Romania', 'Russia', 'Israel', 'Cyprus', 'Bulgaria', 'Hungary',
+             'Czech-Republic', 'Croatia', 'Serbia', 'Romania', 'Israel', 'Cyprus', 'Bulgaria', 'Hungary',
              'Slovakia', 'Slovenia', 'Ireland', 'Wales', 'Northern-Ireland', 'Finland', 'Iceland', 'World',
              'Brazil', 'Argentina', 'USA', 'Mexico', 'Colombia', 'Chile', 'Uruguay', 'Paraguay', 'Peru', 'Ecuador',
              'Japan', 'South-Korea', 'Saudi-Arabia', 'Qatar', 'United-Arab-Emirates', 'Australia', 'China', 'Morocco',
              'Egypt', 'Algeria', 'Tunisia']
+# Jamais proposé par Winamax (ANJ) : compétitions russes et biélorusses (depuis 2022), équipes de jeunes et réserves
+BANNED = ('russia', 'belarus')
+YOUTH = re.compile(r'\bu ?-?(1[5-9]|2[0-3])\b|youth|junior|juvenil|reserve|primavera|\bsub-?(1[5-9]|2[0-3])\b', re.I)
+
+
+def hors_winamax(m):
+    lg = m['league']
+    if (lg.get('country') or '').lower() in BANNED:
+        return True
+    return bool(YOUTH.search(' '.join(str(x or '') for x in (lg.get('name'), m['h'].get('name'), m['a'].get('name')))))
+
+
 SKIP = ('u17', 'u18', 'u19', 'u20', 'u21', 'u23', 'youth', 'women', 'reserve', 'friendlies', 'primavera', 'feminine', 'femenina', 'frauen')
 
 
@@ -262,7 +275,7 @@ def soccer(c, day, prev):
         second = 1 if any(k in name for k in ('2', ' ii', 'second', 'segunda', 'serie b', 'liga 2', 'championship', 'national', 'regional', '3')) else 0
         covered = 1 if lg['id'] in ESPN_LEAGUES else 0
         return (covered, second, rank, m['ts'])
-    cands = [m for m in matches.values() if m['status'] == 'NS' and not m['markets']
+    cands = [m for m in matches.values() if m['status'] == 'NS' and not m['markets'] and not hors_winamax(m)
              and not any(k in (m['league']['name'] or '').lower() for k in SKIP)]
     for m in sorted(cands, key=prio):
         d = c.get(f'/odds?fixture={m["id"]}')
@@ -299,7 +312,7 @@ def other(c, sport, day, prev):
             if k in n:
                 return i
         return 99
-    todo = sorted([m for m in games if m['status'] == 'NS'], key=lambda m: (prio(m), m['ts']))
+    todo = sorted([m for m in games if m['status'] == 'NS' and not hors_winamax(m)], key=lambda m: (prio(m), m['ts']))
     for m in todo:
         if prio(m) == 99 and sport in ('basketball', 'hockey'):
             break  # beaucoup de petits matchs sans intérêt : on garde le quota

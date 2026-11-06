@@ -404,13 +404,18 @@ App.engine = (() => {
       surprises: r.surprises, warnings: r.warnings, extras: r.extras };
   }
   function deserialize(j) {
-    const analyses = j.analyses.map(a => ({ ...a, bets: [] }));
-    const top = j.top.map(b => ({ ...b, a: analyses[b.ai] }));
-    const others = j.others.map(b => ({ ...b, a: analyses[b.ai] }));
-    const all = [...others];
-    const cmb = list => list.map(c => ({ ...c, legs: c.legs.map(i => top[i]) }));
+    const analyses0 = j.analyses.map(a => ({ ...a, bets: [] }));
+    // analyses enregistrées avant le filtre « jamais sur Winamax » (Russie, jeunes…) : on les retire
+    const bad = new Set(analyses0.filter(a => App.marche.exclu(a)));
+    const analyses = analyses0.filter(a => !bad.has(a));
+    const topAll = j.top.map(b => ({ ...b, a: analyses0[b.ai] }));
+    const top = topAll.filter(b => !bad.has(b.a));
+    top.forEach((b, i) => { b.rank = i + 1; });
+    const all = j.others.map(b => ({ ...b, a: analyses0[b.ai] })).filter(b => !bad.has(b.a));
+    const okC = c => c.legs.every(l => l && !bad.has(l.a));
+    const cmb = list => list.map(c => ({ ...c, legs: c.legs.map(i => topAll[i]) })).filter(okC);
     return { ...j, analyses, top, all, combos: { doubles: cmb(j.combos.doubles), triples: cmb(j.combos.triples),
-      hard: (j.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => ({ ...l, a: analyses[l.ai] })) })) } };
+      hard: (j.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => ({ ...l, a: analyses0[l.ai] })) })).filter(okC) } };
   }
   async function saveRemote(r) {
     try {
