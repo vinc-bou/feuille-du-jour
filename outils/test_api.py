@@ -1,4 +1,4 @@
-"""Test : la recherche de matchs par date fonctionne-t-elle pour les jours passés (saison en cours) ?"""
+"""Test : cotes et pronostics API-Football pour un match à venir (formule gratuite)."""
 import json, os, urllib.request, urllib.error
 KEY = os.environ.get('APIFOOTBALL_KEY', '').strip()
 def call(host, path):
@@ -8,14 +8,30 @@ def call(host, path):
             return json.loads(r.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         return {'errors': {'http': e.code}}
-for d in ['2026-11-01', '2026-10-04', '2026-09-13', '2026-08-16']:
-    fx = call('v3.football.api-sports.io', f'/fixtures?date={d}&timezone=Europe/Paris')
-    it = fx.get('response') or []
-    done = [f for f in it if f['fixture']['status']['short'] in ('FT', 'AET', 'PEN')]
-    ukr = [f"{f['teams']['home']['name']} {f['goals']['home']}-{f['goals']['away']} {f['teams']['away']['name']}" for f in done if f['league']['id'] == 333]
-    print(f'foot {d} : {len(it)} matchs, {len(done)} terminés | erreurs {fx.get("errors")} | Ukraine : {ukr[:3]}')
-for name, host in [('basket', 'v1.basketball.api-sports.io'), ('hockey', 'v1.hockey.api-sports.io')]:
-    g = call(host, '/games?date=2026-10-20&timezone=Europe/Paris')
-    print(f'{name} 2026-10-20 : {len(g.get("response") or [])} matchs | erreurs {g.get("errors")}')
-st = call('v3.football.api-sports.io', '/status')
+F = 'v3.football.api-sports.io'
+fx = call(F, '/fixtures?date=2026-11-07&timezone=Europe/Paris').get('response') or []
+ukr = [f for f in fx if f['league']['country'] == 'Ukraine' and f['fixture']['status']['short'] == 'NS']
+f = ukr[0] if ukr else next(x for x in fx if x['fixture']['status']['short'] == 'NS')
+fid = f['fixture']['id']
+print('Match testé :', f['league']['name'], '|', f['teams']['home']['name'], '-', f['teams']['away']['name'], f['fixture']['date'])
+p = call(F, f'/predictions?fixture={fid}')
+print('\nPRONOSTIC erreurs :', p.get('errors'))
+for r in (p.get('response') or [])[:1]:
+    pr = r['predictions']
+    print('  1N2 % :', pr['percent'], '| conseil :', pr['advice'], '| +/- :', pr['under_over'])
+    cmp = r.get('comparison') or {}
+    print('  comparaison :', {k: v for k, v in cmp.items()})
+    print('  forme saison dom :', (r['teams']['home'].get('league') or {}).get('form'), '| ext :', (r['teams']['away'].get('league') or {}).get('form'))
+    lg = r['teams']['home'].get('league') or {}
+    print('  buts dom (pour/contre moyenne) :', (lg.get('goals') or {}).get('for', {}).get('average'), (lg.get('goals') or {}).get('against', {}).get('average'))
+    print('  confrontations :', len(r.get('h2h') or []))
+o = call(F, f'/odds?fixture={fid}')
+print('\nCOTES erreurs :', o.get('errors'))
+for r in (o.get('response') or [])[:1]:
+    print('  bookmakers :', len(r['bookmakers']), [b['name'] for b in r['bookmakers']][:8])
+    b = r['bookmakers'][0]
+    print('  marchés chez', b['name'], ':', len(b['bets']), [x['name'] for x in b['bets']][:25])
+od = call(F, '/odds?date=2026-11-07&page=1')
+print('\nCOTES DU JOUR erreurs :', od.get('errors'), '| pages :', (od.get('paging') or {}), '| matchs page 1 :', len(od.get('response') or []))
+st = call(F, '/status')
 print('Requêtes foot utilisées :', (st.get('response') or {}).get('requests'))
