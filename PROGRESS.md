@@ -56,6 +56,16 @@
   ≥ 5 titulaires changés vs dernier match de la même compétition, forfait tennis. Pas de doublon.
 - Alertes : notification Windows + bandeau dans l'app (/api/alerts). Basket : pas de surveillance des compos.
 
+## Version en ligne GitHub (2026-11-06, V1.5)
+- Dépôt public github.com/vinc-bou/feuille-du-jour (identité git anonyme noreply), page :
+  https://vinc-bou.github.io/feuille-du-jour/ (lit en-ligne/dernier.json et en-ligne/alertes.json).
+- Workflows : analyse.yml (cron 22:10 et 23:10 UTC, ne tourne que s'il est 00-01 h à Paris ; Chrome invisible ;
+  cache actions pour cache/ et profil-auto/), compos.yml (toutes les 15 min, seulement si un match de la
+  sélection est dans 80 min). Résultats en ligne dans en-ligne/ (FEUILLE_RESULTATS), jamais dans resultats/.
+- Alertes téléphone : application ntfy, sujet dans le secret NTFY_TOPIC (copie locale non publiée :
+  abonnement-ntfy.txt). Premier essai sur GitHub : 100 paris, 44 matchs en 58 s, ESPN accepte GitHub.
+- Fichiers de l'app versionnés (?v=5 dans index.html) : augmenter à chaque mise à jour.
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.
