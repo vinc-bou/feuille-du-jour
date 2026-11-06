@@ -155,18 +155,18 @@ App.engine = (() => {
 
     onStep('Classement des paris');
     const { top, all } = rank(analyses, S);
-    const combos = buildCombos(top);
+    const combos = buildCombos(top, all);
     if (replay) {
       // Notation de la sélection avec les vrais résultats
       const mod = sp => sp === 'soccer' ? App.soccer : sp === 'tennis' ? App.tennis : App.basket;
       const res = b => { const r = mod(b.sport).settle(b.settle, orig.get(b.ref.id)); return r === 'void' || r === null || r === undefined ? 'void' : (r ? 'won' : 'lost'); };
       top.forEach(b => { b.result = res(b); });
-      [...combos.doubles, ...combos.triples].forEach(c => {
+      [...combos.doubles, ...combos.triples, ...combos.hard].forEach(c => {
         const rs = c.legs.map(l => l.result || res(l));
         c.result = rs.includes('lost') ? 'lost' : rs.every(r => r === 'void') ? 'void' : 'won';
       });
       analyses.forEach(a => { a.real = orig.get(a.match.id); });
-    } else await saveHistory(W.key, top, combos);
+    } else await saveHistory(W.key, top, combos, Date.now());
     analyses.sort((a, b) => a.match.ts - b.match.ts);
     return { W, analyses, top, all, combos, surprises, warnings, extras: extrasInfo, replay, ranAt: Date.now() };
   }
@@ -219,7 +219,54 @@ App.engine = (() => {
     return { top, all };
   }
 
-  function buildCombos(top) {
+  // Combinés « grosse cote » : atteindre une cote de 5, 10 ou 15 avec les paris les plus sûrs,
+  // un seul pari par match, au plus 2 matchs d'un même championnat de foot.
+  const HARD = [5, 10, 15];
+  function hardCombos(all) {
+    const best = new Map();
+    all.forEach(b => {
+      if (b.conf < 0.4 || 1 / b.p < 1.15 || (b.notes || []).includes('Match piège') || b.ts < Date.now()) return;
+      const k = b.ref.id, cur = best.get(k);
+      if (!cur || b.score > cur.score) best.set(k, b);
+    });
+    const singles = [...best.values()].sort((x, y) => y.score - x.score);
+    // version courte : paris à cote 1,40 - 2,30 (moins de matchs, donc moins de marge du bookmaker)
+    const mid = new Map();
+    all.forEach(b => {
+      const o = 1 / b.p;
+      if (b.conf < 0.4 || o < 1.4 || o > 2.3 || (b.notes || []).includes('Match piège') || b.ts < Date.now()) return;
+      const k = b.ref.id, cur = mid.get(k);
+      if (!cur || b.score + 0.3 * b.p > cur.score + 0.3 * cur.p) mid.set(k, b);
+    });
+    const midList = [...mid.values()].sort((x, y) => (y.score - 0.03 * (1 / y.p)) - (x.score - 0.03 * (1 / x.p)));
+    const lgKey = b => b.sport === 'soccer' ? b.ref.lg : null;
+    const grow = (list, T, minFin) => {
+      const legs = [], per = {};
+      let odd = 1;
+      const okLeg = b => !legs.some(l => l.ref.id === b.ref.id) && (!lgKey(b) || (per[lgKey(b)] || 0) < 2);
+      const push = b => { legs.push(b); odd /= b.p; if (lgKey(b)) per[lgKey(b)] = (per[lgKey(b)] || 0) + 1; };
+      while (odd < T - 1e-9 && legs.length < 25) {
+        const need = T / odd;
+        const free = list.filter(okLeg);
+        if (!free.length) return null;
+        // dernier pari : le plus sûr de ceux qui suffisent à atteindre la cote visée sans trop la dépasser
+        const finisher = 1 / free[0].p < need - 1e-9 && free.find(x => x.p >= minFin && 1 / x.p >= need - 1e-9 && 1 / x.p <= need * 1.3);
+        push(finisher || free[0]);
+      }
+      if (odd < T - 1e-9) return null;
+      legs.sort((x, y) => x.ts - y.ts);
+      return { legs, p: legs.reduce((a, b) => a * b.p, 1), conf: Math.min(...legs.map(l => l.conf)), target: T, kind: 'hard',
+        id: 'H' + T + '§' + legs.map(l => l.id).sort().join('§') };
+    };
+    const out = [];
+    HARD.forEach(T => {
+      const a = grow(singles, T, 0.75); if (a) { a.style = 'sure'; out.push(a); }
+      const b = grow(midList, T, 0.6); if (b && (!a || b.id !== a.id)) { b.style = 'courte'; out.push(b); }
+    });
+    return out;
+  }
+
+  function buildCombos(top, all) {
     const pool = top.slice(0, 40);
     const leagueKey = b => b.sport === 'soccer' ? b.ref.lg : b.sport + b.ref.id;
     const ok = legs => {
@@ -254,19 +301,21 @@ App.engine = (() => {
     }
     triples.sort((a, b) => b.p - a.p);
     const d3 = pick(triples, 6, 3);
-    return { doubles: d2, triples: d3 };
+    return { doubles: d2, triples: d3, hard: hardCombos(all || top) };
   }
 
   /* ---------- Historique ---------- */
   const slim = b => ({ id: b.id, label: b.label, group: b.group, p: b.p, conf: b.conf, settle: b.settle, ref: b.ref,
-    matchName: b.matchName, comp: b.comp, sport: b.sport, ts: b.ts, rank: b.rank, notes: b.notes });
+    matchName: b.matchName, comp: b.comp, sport: b.sport, ts: b.ts, rank: b.rank, notes: b.notes,
+    why: b.why || (b.a ? App.why(b) : ''), factors: b.factors || (b.a ? (b.a.factors || []).slice(0, 10) : []) });
 
-  async function saveHistory(dayKey, top, combos) {
+  async function saveHistory(dayKey, top, combos, at) {
+    const H = combos.hard || [];
     const now = Date.now();
     const existing = (await App.db.all('history')).filter(([k]) => k.startsWith(dayKey + '|'));
     const keep = new Set();
     top.forEach(b => keep.add(`${dayKey}|B|${b.id}`));
-    [...combos.doubles, ...combos.triples].forEach(c => keep.add(`${dayKey}|C|${c.id}`));
+    [...combos.doubles, ...combos.triples, ...H].forEach(c => keep.add(`${dayKey}|C|${c.id}`));
     // On retire les anciens pronostics de matchs pas encore commencés qui ne sont plus dans la sélection
     for (const [k, v] of existing) {
       const started = v.type === 'B' ? v.bet.ts <= now : v.legs.some(l => l.ts <= now);
@@ -277,13 +326,13 @@ App.engine = (() => {
       const k = `${dayKey}|B|${b.id}`;
       const prev = exMap.get(k);
       if (prev && b.ts <= now) continue; // match commencé : on garde le pronostic d'origine
-      await App.db.put('history', k, { type: 'B', day: dayKey, bet: slim(b), result: prev ? prev.result : null, savedAt: now });
+      await App.db.put('history', k, { type: 'B', day: dayKey, bet: slim(b), result: prev ? prev.result : null, savedAt: now, at: at || now });
     }
-    for (const c of [...combos.doubles, ...combos.triples]) {
+    for (const c of [...combos.doubles, ...combos.triples, ...H]) {
       const k = `${dayKey}|C|${c.id}`;
       const prev = exMap.get(k);
       if (prev && c.legs.some(l => l.ts <= now)) continue;
-      await App.db.put('history', k, { type: 'C', day: dayKey, p: c.p, legs: c.legs.map(slim), result: prev ? prev.result : null, savedAt: now });
+      await App.db.put('history', k, { type: 'C', day: dayKey, p: c.p, legs: c.legs.map(slim), kind: c.kind || '', target: c.target, result: prev ? prev.result : null, savedAt: now, at: at || now });
     }
   }
 
@@ -350,7 +399,8 @@ App.engine = (() => {
     // on garde 30 paris par match : de quoi refaire un classement par fourchette de cotes
     r.analyses.forEach(a => r.all.filter(b => b.a === a).slice(0, 30).forEach(b => others.push(betOut(b, idx.get(a)))));
     const cmb = list => list.map(c => ({ p: c.p, conf: c.conf, id: c.id, legs: c.legs.map(l => r.top.indexOf(l)) }));
-    return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples) },
+    return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples),
+      hard: (r.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => betOut(l, idx.get(l.a))) })) },
       surprises: r.surprises, warnings: r.warnings, extras: r.extras };
   }
   function deserialize(j) {
@@ -359,7 +409,8 @@ App.engine = (() => {
     const others = j.others.map(b => ({ ...b, a: analyses[b.ai] }));
     const all = [...others];
     const cmb = list => list.map(c => ({ ...c, legs: c.legs.map(i => top[i]) }));
-    return { ...j, analyses, top, all, combos: { doubles: cmb(j.combos.doubles), triples: cmb(j.combos.triples) } };
+    return { ...j, analyses, top, all, combos: { doubles: cmb(j.combos.doubles), triples: cmb(j.combos.triples),
+      hard: (j.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => ({ ...l, a: analyses[l.ai] })) })) } };
   }
   async function saveRemote(r) {
     try {

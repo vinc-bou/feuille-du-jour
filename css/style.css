@@ -171,3 +171,30 @@ tr.detail td { background: var(--panel); padding: 12px 16px 14px 50px; }
 .grid th[data-sort] { cursor: pointer; }
 .grid th[data-sort]:hover { color: var(--text); }
 .filters .sortsel { border-color: var(--accent); }
+
+/* ---- Recherche permanente ---- */
+.top { position: sticky; top: 0; z-index: 20; background: var(--bg); }
+.searchbar { flex-basis: 100%; }
+.searchbar input { width: 100%; background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 9px 12px; font: inherit; font-size: 15px; border-radius: 2px; }
+.searchbar input:focus { outline: none; border-color: var(--accent); }
+.sres h3 { margin-top: 22px; }
+.sres .hit { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--line2); cursor: pointer; }
+.sres .hit:hover { background: var(--panel); }
+.sres .hit .m { color: var(--muted); }
+
+/* ---- Tri : flèche sur la colonne active ---- */
+.grid th.sorted { color: var(--accent); }
+
+/* ---- Pourquoi ce pari ---- */
+.why { border-left: 2px solid var(--accent); padding: 4px 0 4px 12px; margin: 2px 0 14px; line-height: 1.55; max-width: 900px; }
+.why b { font-family: var(--cond); text-transform: uppercase; letter-spacing: .03em; margin-right: 6px; color: var(--accent); }
+
+/* ---- Historique : détail ---- */
+.hrow { cursor: pointer; }
+.hrow:hover td { background: var(--panel); }
+.hdetail td { background: var(--panel); padding: 12px 14px !important; }
+.hdetail ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+
+/* ---- Grosses cotes ---- */
+.hard .combo .odd { color: var(--accent); }
+.hard .tgt { font-family: var(--cond); font-size: 13px; text-transform: uppercase; color: var(--muted); }

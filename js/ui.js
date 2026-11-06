@@ -5,18 +5,22 @@
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
   const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '' }, open: null,
-    sort: 'rel', cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
-  // Choix de tri (Sélection) : libellé + fonction de comparaison
+    sort: 'rel', rev: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
+  // Tri (Sélection) : [nom, ordre normal, ordre inversé, comparaison dans l'ordre normal]
+  // Un clic sur un titre de colonne trie ; un 2e clic sur la même colonne inverse l'ordre.
+  const RESO = { won: 0, lost: 1, void: 2 };
   const SORTS = {
-    rel: ['Fiabilité (meilleurs d’abord)', (a, b) => a.vr - b.vr],
-    time: ['Heure du match', (a, b) => a.ts - b.ts || a.vr - b.vr],
-    oddAsc: ['Cote (plus petite d’abord)', (a, b) => b.p - a.p],
-    oddDesc: ['Cote (plus grande d’abord)', (a, b) => a.p - b.p],
-    sport: ['Sport', (a, b) => a.sport.localeCompare(b.sport) || a.vr - b.vr],
-    comp: ['Compétition', (a, b) => a.comp.localeCompare(b.comp) || a.ts - b.ts],
-    conf: ['Confiance', (a, b) => b.conf - a.conf || a.vr - b.vr],
-    group: ['Type de pari', (a, b) => a.group.localeCompare(b.group) || a.vr - b.vr],
+    rel: ['Fiabilité', 'meilleurs d’abord', 'moins fiables d’abord', (a, b) => a.vr - b.vr],
+    time: ['Heure', 'plus tôt d’abord', 'plus tard d’abord', (a, b) => a.ts - b.ts],
+    odd: ['Cote', 'plus petite d’abord', 'plus grande d’abord', (a, b) => b.p - a.p],
+    sport: ['Sport', 'A → Z', 'Z → A', (a, b) => (SP[a.sport] || '').localeCompare(SP[b.sport] || '')],
+    comp: ['Compétition', 'A → Z', 'Z → A', (a, b) => a.comp.localeCompare(b.comp) || a.ts - b.ts],
+    match: ['Match', 'A → Z', 'Z → A', (a, b) => a.matchName.localeCompare(b.matchName)],
+    group: ['Type de pari', 'A → Z', 'Z → A', (a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label)],
+    conf: ['Confiance', 'haute d’abord', 'faible d’abord', (a, b) => b.conf - a.conf],
+    res: ['Résultat', 'gagnés d’abord', 'perdus d’abord', (a, b) => (RESO[a.result] ?? 3) - (RESO[b.result] ?? 3)],
   };
+  const sorter = () => { const f = (SORTS[state.sort] || SORTS.rel)[3], k = state.rev ? -1 : 1; return (a, b) => (k * f(a, b)) || a.vr - b.vr; };
   const ODDS = [1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50, 1.60, 1.75, 2, 2.5, 3, 4, 5];
   const oddOk = (p, f) => { const o = 1 / p; return (!f.oddMin || o >= +f.oddMin - 1e-9) && (!f.oddMax || o <= +f.oddMax + 1e-9); };
 
@@ -136,7 +140,7 @@
         if (f.time === 'n' && !(h >= 23 || h < 6)) return false;
       }
       return true;
-    }).sort(SORTS[state.sort] ? SORTS[state.sort][1] : SORTS.rel[1]);
+    }).sort(sorter());
   }
 
   function realScore(a) {
@@ -159,7 +163,10 @@
       </div>`).join('')}</div>`;
   }
 
+  const findBet = id => state.result && ([...state.result.top, ...state.result.all].find(b => b.id === id) || null);
+  const whyHtml = txt => txt ? `<p class="why"><b>Pourquoi ce pari</b>${esc(txt)}</p>` : '';
   function detailHtml(a, focusId) {
+    const fb = focusId ? findBet(focusId) : null;
     const others = state.result.all.filter(b => b.a === a && b.id !== focusId).slice(0, 8);
     let form = '';
     if (a.forms) {
@@ -168,7 +175,7 @@
     }
     const st = a.standings && (a.standings.h || a.standings.a) ? `<div style="margin-top:6px;color:var(--muted)">Classement : ${a.standings.h ? `${esc(a.match.h.short)} ${a.standings.h.rank}e (${a.standings.h.pts} pts)` : ''}${a.standings.h && a.standings.a ? ' · ' : ''}${a.standings.a ? `${esc(a.match.a.short)} ${a.standings.a.rank}e (${a.standings.a.pts} pts)` : ''}</div>` : '';
     const sc = a.scorers && a.scorers.length ? `<h4 style="margin-top:12px">Buteurs</h4><table class="mini">${a.scorers.map(s => `<tr><td>${esc(s.name)} <span style="color:var(--dim)">${esc(s.team)}</span>${s.rev ? ' <span style="color:var(--accent)">revenant</span>' : ''}</td><td class="n">${s.g} but${s.g > 1 ? 's' : ''}</td><td class="n">${s.rank ? s.rank + 'e du championnat' : ''}</td></tr>`).join('')}</table>` : '';
-    return `<div class="cols">
+    return `${fb ? whyHtml(App.why(fb)) : ''}<div class="cols">
       <div><h4>Analyse</h4><ul>${a.factors.map(f => `<li>${esc(f)}</li>`).join('') || '<li>Rien de particulier</li>'}</ul>${form ? `<h4 style="margin-top:12px">Forme (du plus récent au plus ancien)</h4>${form}` : ''}${st}</div>
       <div><h4>Autres paris sur ce match</h4><table class="mini">${others.map(b => `<tr><td>${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n">${t.odd(b.p)}</td></tr>`).join('')}</table>${sc}</div>
     </div>`;
@@ -192,11 +199,12 @@
       <select data-f="oddMin">${options(ODDS.map(o => [String(o), 'Cote dès ' + t.num(o, 2)]), f.oddMin, 'Cote : pas de minimum')}</select>
       <select data-f="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), f.oddMax, 'Cote : pas de maximum')}</select>
       <input data-f="q" placeholder="Équipe, joueur…" value="${esc(f.q)}">
-      <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>Trier : ${v[0]}</option>`).join('')}</select>
+      <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).filter(([k]) => k !== 'res' || r.replay).map(([k, v]) => [0, 1].map(rv => `<option value="${k}|${rv}" ${k === state.sort && !!rv === state.rev ? 'selected' : ''}>Trier : ${v[0]} (${v[1 + rv]})</option>`).join('')).join('')}</select>
       <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''}${f.oddMin || f.oddMax ? ' dans cette fourchette de cotes' : ''} · ${r.analyses.length} matchs analysés</span>
     </div>`;
     if (!rows.length) return html + `<div class="empty">Aucun pari ne correspond à ces filtres.</div>`;
-    html += `<table class="grid"><thead><tr><th style="text-align:right" data-sort="rel">#</th><th data-sort="time">Heure</th><th data-sort="comp">Compétition</th><th>Match</th><th data-sort="group">Pari</th><th data-sort="rel">Fiabilité</th><th data-sort="odd">Cote mini</th><th data-sort="conf">Confiance</th><th>À savoir</th>${r.replay ? '<th>Résultat</th>' : ''}</tr></thead><tbody>`;
+    const th = (k, txt, st) => `<th data-sort="${k}" class="${state.sort === k ? 'sorted' : ''}" ${st ? `style="${st}"` : ''} title="Trier (cliquer à nouveau pour inverser)">${txt}${state.sort === k ? (state.rev ? ' ▲' : ' ▼') : ''}</th>`;
+    html += `<table class="grid"><thead><tr><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
     rows.forEach(b => {
       const open = state.open === b.id;
       html += `<tr class="row ${b.vr <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
@@ -236,7 +244,16 @@
         <div class="cf"><span class="rel"><span class="v num" style="font-family:var(--cond);font-weight:700;font-size:18px">${t.pct(c.p)}</span></span><div class="bar"><div style="width:${Math.round(c.p * 100)}%"></div></div></div>
         <div class="odd num">${t.odd(c.p)}<div style="font-size:11px;color:var(--muted);font-family:var(--body);font-weight:400">cote mini</div>${c.result ? `<div class="res-${c.result}" style="font-family:var(--body);font-size:13px">${RES[c.result]}</div>` : ''}</div>
       </div>`).join('') : '<div class="empty">Aucun combiné ne correspond (filtre de cote, ou pas assez de matchs différents).</div>');
-    return `<div class="combos">${bar}${block('Combinés à 2 paris', doubles)}${block('Combinés à 3 paris', triples)}
+    const H = state.result.combos.hard || [];
+    const hard = `<h3>Grosses cotes du jour</h3>` + (H.length ? `<div class="hard">${[5, 10, 15].map(T => H.filter(c => c.target === T).map(c => `
+      <div class="combo">
+        <div class="legs"><div class="tgt">Cote visée ${T} · ${c.style === 'courte' ? 'version courte' : 'version sûre'} · ${c.legs.length} pari${c.legs.length > 1 ? 's' : ''}</div>${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${esc(SP[l.sport] || '')} · ${d.hm(l.ts)} · ${t.pct(l.p)} · cote mini ${t.odd(l.p)}</span></div>`).join('')}</div>
+        <div class="cf"><span class="rel"><span class="v num" style="font-family:var(--cond);font-weight:700;font-size:18px">${t.pct(c.p)}</span></span><div class="bar"><div style="width:${Math.max(2, Math.round(c.p * 100))}%"></div></div></div>
+        <div class="odd num">${t.num(1 / c.p, 2)}<div style="font-size:11px;color:var(--muted);font-family:var(--body);font-weight:400">cote mini</div>${c.result ? `<div class="res-${c.result}" style="font-family:var(--body);font-size:13px">${RES[c.result]}</div>` : ''}</div>
+      </div>`).join('')).join('')}</div>
+      <p class="warn">Version sûre : beaucoup de paris parmi les plus fiables du jour. Version courte : moins de matchs (cotes de 1,40 à 2,30), donc moins de marge prise par Winamax. Un seul pari par match, deux matchs au plus d’un même championnat. Une grosse cote reste un pari risqué : à jouer petit.</p>`
+      : '<div class="empty">Pas assez de paris fiables aujourd’hui pour construire une grosse cote.</div>');
+    return `<div class="combos">${bar}${hard}${block('Combinés à 2 paris', doubles)}${block('Combinés à 3 paris', triples)}
       <p class="warn" style="margin-top:14px">Chaque combiné ne mélange que des matchs différents, et jamais deux matchs du même championnat de foot (pour ne pas empiler les favoris d'une même journée).</p></div>`;
   }
 
@@ -262,10 +279,31 @@
   }
 
   /* ---------- Historique ---------- */
+  const RESTXT = v => ({ won: 'Gagné', lost: 'Perdu', void: 'Annulé' }[v.result] || 'En attente');
+  const longDate = ts => new Date(ts).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  function histDetail(v) {
+    const b = v.bet;
+    const at = v.at || v.savedAt;
+    // pronostics enregistrés avant cette version : on retrouve l'analyse si elle est encore chargée
+    const live = !b.why ? findBet(b.id) : null;
+    const why = b.why || (live ? App.why(live) : '');
+    const factors = (b.factors && b.factors.length) ? b.factors : live ? live.a.factors : [];
+    return `<div style="color:var(--muted);margin-bottom:6px">Pronostic donné le ${esc(longDate(at))} à ${d.hm(at)} · match le ${esc(longDate(b.ts))} à ${d.hm(b.ts)} · ${esc(b.comp)} · fiabilité ${t.pct(b.p)} · cote mini ${t.odd(b.p)}</div>
+      ${why ? whyHtml(why) : '<p class="why">Analyse détaillée non enregistrée pour ce pronostic (donné avant la mise à jour du 6 novembre).</p>'}
+      ${factors.length ? `<h4>Analyse</h4><ul>${factors.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}`;
+  }
+  function histRow(v) {
+    const b = v.bet;
+    return `<tr class="hrow" data-h="${esc(v._k)}"><td class="n" style="width:30px;color:var(--muted)">${b.rank}</td><td>${esc(b.label)}</td><td style="color:var(--muted)">${esc(b.matchName)}</td><td class="n" style="color:var(--muted)">${d.hm(b.ts)}</td><td class="n">${t.pct(b.p)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`
+      + (state.hopen === v._k ? `<tr class="hdetail"><td colspan="6">${histDetail(v)}</td></tr>` : '');
+  }
   async function renderHistory() {
-    const entries = (await App.db.all('history')).map(([k, v]) => v);
+    const raw = await App.db.all('history');
+    raw.forEach(([k, v]) => { v._k = k; });
+    const entries = raw.map(([k, v]) => v);
     const bets = entries.filter(v => v.type === 'B');
-    const combos = entries.filter(v => v.type === 'C');
+    const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard');
+    const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard');
     const done = bets.filter(v => v.result === 'won' || v.result === 'lost');
     if (!bets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
     const rate = l => { const w = l.filter(v => v.result === 'won').length; return l.length ? w / l.length : 0; };
@@ -277,6 +315,7 @@
       <div class="kpi"><div class="l">Fiabilité annoncée (moyenne)</div><div class="v num">${done.length ? t.pct(exp(done)) : '-'}</div></div>
       <div class="kpi"><div class="l">Top 10 : réussite</div><div class="v num">${(() => { const l = done.filter(v => v.bet.rank <= 10); return l.length ? t.pct(rate(l)) : '-'; })()}</div></div>
       <div class="kpi"><div class="l">Combinés gagnés</div><div class="v num">${cDone.length ? `${cDone.filter(v => v.result === 'won').length}/${cDone.length}` : '-'}</div></div>
+      <div class="kpi"><div class="l">Grosses cotes gagnées</div><div class="v num">${(() => { const l = hards.filter(v => v.result === 'won' || v.result === 'lost'); return l.length ? `${l.filter(v => v.result === 'won').length}/${l.length}` : '-'; })()}</div></div>
       <div class="kpi"><div class="l">En attente</div><div class="v num">${bets.filter(v => v.result === null).length}</div></div>
     </div>`;
     const table = (title, keyFn) => {
@@ -299,10 +338,88 @@
       const dd = l.filter(v => v.result === 'won' || v.result === 'lost');
       const label = new Date(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6)).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
       html += `<div class="sect"><h3>${label} <span style="color:var(--muted);font-size:14px">${dd.length ? `${dd.filter(v => v.result === 'won').length}/${dd.length} gagnés` : 'en attente'}</span></h3>
-        <table class="mini">${l.map(v => `<tr><td class="n" style="width:30px;color:var(--muted)">${v.bet.rank}</td><td>${esc(v.bet.label)}</td><td style="color:var(--muted)">${esc(v.bet.matchName)}</td><td class="n">${t.pct(v.bet.p)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${{ won: 'Gagné', lost: 'Perdu', void: 'Annulé' }[v.result] || 'En attente'}</td></tr>`).join('')}</table></div>`;
+        <table class="mini">${l.map(histRow).join('')}</table></div>`;
     });
     html += `<p style="margin-top:20px"><button class="btn2" id="clearHist">Effacer l'historique</button></p>`;
     return html;
+  }
+
+  /* ---------- Recherche (barre en haut, toujours visible) ---------- */
+  const WD = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  const MO = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
+  const REL = { 'aujourd’hui': 0, "aujourd'hui": 0, 'aujourdhui': 0, 'avant-hier': -2, 'demain': 1, 'hier': -1 };
+  // Repère une date dans la recherche ; renvoie { key: AAAAMMJJ, date, rest: mots restants }
+  function parseDate(qn) {
+    const now = new Date(); let date = null; let rest = qn;
+    const take = re => { const m = rest.match(re); if (m) rest = rest.replace(m[0], ' '); return m; };
+    let m;
+    if ((m = take(/\b(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?\b/))) {
+      const y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : now.getFullYear();
+      date = new Date(y, +m[2] - 1, +m[1]);
+    } else if ((m = take(new RegExp(`\\b(\\d{1,2})(?:er)? (${MO.join('|')})(?: (\\d{4}))?\\b`)))) {
+      date = new Date(m[3] ? +m[3] : now.getFullYear(), MO.indexOf(m[2]), +m[1]);
+    } else {
+      for (const [w, o] of Object.entries(REL)) {
+        if (rest.includes(w)) { rest = rest.replace(w, ' '); date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + o); break; }
+      }
+      if (!date) {
+        const i = WD.findIndex(w => new RegExp(`\\b${w}\\b`).test(rest));
+        if (i >= 0) {
+          rest = rest.replace(WD[i], ' ');
+          for (let o = 1; o >= -6; o--) { const x = new Date(now.getFullYear(), now.getMonth(), now.getDate() + o); if (x.getDay() === i) { date = x; break; } }
+        }
+      }
+    }
+    return { key: date ? d.ymd(date) : null, date, rest: rest.split(/\s+/).filter(Boolean) };
+  }
+  const hasAll = (txt, words) => { const n = t.norm(txt); return words.every(w => n.includes(w)); };
+  async function renderSearch() {
+    const qn = t.norm(state.q.trim());
+    const { key, date, rest } = parseDate(qn);
+    let html = '<div class="sres">';
+    let found = 0;
+    // 1. Matchs du jour affiché
+    const r = state.result;
+    if (r && rest.length && (!key || key === r.W.key)) {
+      const list = r.analyses.filter(a => hasAll([
+        a.match.h ? `${a.match.h.name} ${a.match.h.short} ${a.match.a.name} ${a.match.a.short}` : (a.match.players || []).map(p => p.name).join(' '),
+        a.comp, SP[a.sport], (a.scorers || []).map(x => x.name).join(' '),
+      ].join(' '), rest)).slice(0, 30);
+      if (list.length) {
+        found += list.length;
+        html += `<h3>Matchs · ${esc(d.dayLabel(r.W.start))}</h3>`;
+        list.forEach(a => {
+          const bets = r.top.filter(b => b.a === a);
+          const id = 's' + a.match.id;
+          html += `<div class="hit" data-s="${esc(id)}"><div class="num m">${d.hm(a.match.ts)}</div><div>${teamsHtml(a)} <span class="m">· ${esc(SP[a.sport])} · ${esc(a.comp)}</span></div>
+            <div class="m">${bets.length ? `${bets.length} pari${bets.length > 1 ? 's' : ''} dans la sélection` : 'hors sélection'}</div></div>`;
+          if (state.open === id) {
+            const best = bets[0] || r.all.find(b => b.a === a);
+            html += `<div class="detail" style="padding:12px 4px">${bets.length ? `<table class="mini" style="margin-bottom:10px">${bets.map(b => `<tr><td class="n" style="width:30px;color:var(--muted)">${b.rank}</td><td>${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n">${t.odd(b.p)}</td></tr>`).join('')}</table>` : ''}${detailHtml(a, best ? best.id : null)}</div>`;
+          }
+        });
+      }
+    }
+    // 2. Historique
+    const hist = (await App.db.all('history')).map(([k, v]) => { v._k = k; return v; }).filter(v => v.type === 'B')
+      .filter(v => (!key || v.day === key || d.ymd(new Date(v.bet.ts)) === key) && (!rest.length || hasAll(`${v.bet.label} ${v.bet.matchName} ${v.bet.comp} ${SP[v.bet.sport]}`, rest)))
+      .sort((a, b) => b.bet.ts - a.bet.ts || a.bet.rank - b.bet.rank).slice(0, 60);
+    if (hist.length) {
+      found += hist.length;
+      html += `<h3>Historique des pronostics${key ? ` · ${esc(longDate(date))}` : ''}</h3>`;
+      [...new Set(hist.map(v => v.day))].forEach(day => {
+        const l = hist.filter(v => v.day === day);
+        html += `<div style="color:var(--muted);margin:10px 0 4px">${esc(longDate(new Date(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6))))}</div><table class="mini">${l.map(histRow).join('')}</table>`;
+      });
+    }
+    // 3. Date : proposer d'ouvrir ce jour
+    if (key) {
+      const off = [-2, -1, 0, 1].find(o => d.window(o).key === key);
+      if (off !== undefined && (!r || r.W.key !== key)) html += `<p style="margin-top:16px"><button class="btn2" data-goday="${off}">Afficher la journée du ${esc(longDate(date))}</button></p>`;
+      else if (off === undefined && !hist.length) html += `<div class="empty">Aucun pronostic enregistré pour le ${esc(longDate(date))}.</div>`;
+    }
+    if (!found && !key) html += `<div class="empty">Rien trouvé pour « ${esc(state.q)} ». Essayez un nom d’équipe, de joueur, une compétition ou une date (7/11, samedi, hier).</div>`;
+    return html + '</div>';
   }
 
   /* ---------- Réglages ---------- */
@@ -341,9 +458,15 @@
   }
 
   /* ---------- Rendu ---------- */
+  let renderTok = 0;
   async function render() {
-    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
-    if (state.tab === 'history') { view.innerHTML = await renderHistory(); return; }
+    const searching = !!state.q.trim();
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', !searching && b.dataset.tab === state.tab));
+    // une seule mise à jour gagne si plusieurs rendus se chevauchent (frappe rapide dans la recherche)
+    const tok = ++renderTok;
+    const put = html => { if (tok === renderTok) view.innerHTML = html; };
+    if (searching) { put(await renderSearch().catch(e => { console.error(e); return `<div class="empty">Erreur de recherche : ${esc(e.message)}</div>`; })); return; }
+    if (state.tab === 'history') { put(await renderHistory()); return; }
     if (state.tab === 'settings') { view.innerHTML = await renderSettings(); return; }
     if (!state.result) {
       if (state.day < 0) {
@@ -369,13 +492,21 @@
   });
   $('#tabs').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    state.tab = b.dataset.tab; state.open = null; render();
+    state.tab = b.dataset.tab; state.open = null; state.hopen = null; clearSearch(); render();
   });
+  const sInput = $('#search');
+  const clearSearch = () => { state.q = ''; sInput.value = ''; };
+  let sTimer;
+  sInput.addEventListener('input', () => {
+    clearTimeout(sTimer);
+    sTimer = setTimeout(() => { state.q = sInput.value; state.open = null; state.hopen = null; render(); }, 250);
+  });
+  sInput.addEventListener('keydown', e => { if (e.key === 'Escape') { clearSearch(); render(); } });
   view.addEventListener('change', async e => {
     const el = e.target;
     if (el.dataset.f) { state.filters[el.dataset.f] = el.value; render(); return; }
     if (el.dataset.cf) { state.cfilters[el.dataset.cf] = el.value; render(); return; }
-    if (el.dataset.sortSel) { state.sort = el.value; render(); return; }
+    if (el.dataset.sortSel) { const [k, rv] = el.value.split('|'); state.sort = k; state.rev = rv === '1'; render(); return; }
     if (el.dataset.comp || el.id === 'maxPer' || el.id === 'minOdd') {
       const s = (await App.db.get('kv', 'settings')) || {};
       s.comps = s.comps || {};
@@ -400,11 +531,17 @@
     const th = e.target.closest('th[data-sort]');
     if (th) {
       const k = th.dataset.sort;
-      state.sort = k === 'odd' ? (state.sort === 'oddAsc' ? 'oddDesc' : 'oddAsc') : k;
+      if (state.sort === k) state.rev = !state.rev; else { state.sort = k; state.rev = false; }
       render(); return;
     }
     const row = e.target.closest('tr.row');
     if (row) { state.open = state.open === row.dataset.id ? null : row.dataset.id; render(); return; }
+    const gd = e.target.closest('[data-goday]');
+    if (gd) { clearSearch(); document.querySelector(`#daySeg button[data-day="${gd.dataset.goday}"]`).click(); return; }
+    const hit = e.target.closest('.hit');
+    if (hit) { state.open = state.open === hit.dataset.s ? null : hit.dataset.s; render(); return; }
+    const hr = e.target.closest('tr.hrow');
+    if (hr) { state.hopen = state.hopen === hr.dataset.h ? null : hr.dataset.h; render(); return; }
     const mr = e.target.closest('.mrow');
     if (mr) { state.open = state.open === mr.dataset.m ? null : mr.dataset.m; render(); return; }
     if (e.target.id === 'clearCache') {

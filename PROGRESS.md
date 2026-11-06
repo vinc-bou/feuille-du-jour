@@ -85,6 +85,15 @@
   parmi tous les paris (30 par match gardés dans l'analyse enregistrée). Combinés : tri + fourchette.
 - Attention aux apostrophes dans les chaînes JS (utiliser ’) ; vérifier avec `node -e "new Function(...)"`.
 
+## Explications, recherche, grosses cotes (2026-11-06, V1.8)
+- Tri : clic sur une colonne = tri, 2e clic = ordre inverse (flèche ▼/▲) ; la liste propose les deux sens.
+- js/pourquoi.js (App.why) : paragraphe « Pourquoi ce pari » (buts attendus, chances 1N2, forme, classement,
+  bookmakers, contexte, cote mini) affiché dans le détail ; enregistré dans l'historique avec les facteurs et l'heure.
+- Historique : clic sur un pronostic = heure de publication + explication + analyse.
+- Barre de recherche fixe en haut : équipe, joueur, compétition, date (7/11, 7 novembre, samedi, hier).
+- Combinés grosse cote 5 / 10 / 15 (engine.hardCombos) : version sûre (paris les plus fiables) et courte
+  (cotes 1,40-2,30), 1 pari par match, 2 matchs max par championnat ; suivis dans l'historique (kind 'hard').
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.
