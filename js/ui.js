@@ -5,7 +5,7 @@
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
   const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '' }, open: null,
-    sort: 'rel', rev: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
+    sort: 'rel', rev: false, live: {}, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
   // Tri (Sélection) : [nom, ordre normal, ordre inversé, comparaison dans l'ordre normal]
   // Un clic sur un titre de colonne trie ; un 2e clic sur la même colonne inverse l'ordre.
   const RESO = { won: 0, lost: 1, void: 2 };
@@ -21,7 +21,7 @@
     res: ['Résultat', 'gagnés d’abord', 'perdus d’abord', (a, b) => (RESO[a.result] ?? 3) - (RESO[b.result] ?? 3)],
   };
   const sorter = () => { const f = (SORTS[state.sort] || SORTS.rel)[3], k = state.rev ? -1 : 1; return (a, b) => (k * f(a, b)) || a.vr - b.vr; };
-  const ODDS = [1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50, 1.60, 1.75, 2, 2.5, 3, 4, 5];
+  const ODDS = [1.01, 1.03, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50, 1.60, 1.75, 2, 2.5, 3, 4, 5];
   const oddOk = (p, f) => { const o = 1 / p; return (!f.oddMin || o >= +f.oddMin - 1e-9) && (!f.oddMax || o <= +f.oddMax + 1e-9); };
 
   const confCls = c => c >= 0.7 ? 'h' : c >= 0.4 ? 'm' : 'l';
@@ -60,7 +60,14 @@
       step = 'Vérification des résultats d\'hier';
       setStatus(step, 0);
       await App.engine.settleAll().catch(e => console.warn(e));
+      const prev = state.result;
       state.result = await App.engine.run(state.day, s => { step = s; setStatus(s); });
+      // les matchs déjà commencés ne sont plus analysés : on garde leurs pronostics pour le suivi en direct
+      if (prev && !state.result.replay && prev.W.key === state.result.W.key) {
+        const ids = new Set(state.result.top.map(b => b.id)), seen = new Set();
+        state.result.started = [...(prev.started || []), ...prev.top].filter(b => b.ts <= Date.now() && !ids.has(b.id) && !seen.has(b.id) && seen.add(b.id));
+      }
+      pollLive();
       state.open = null;
       // Sélection transmise au serveur local : c'est elle que la surveillance des compositions suivra
       if (!state.result.replay) App.engine.saveRemote(state.result);
@@ -106,6 +113,54 @@
     return `<p class="warn" style="color:var(--text)"><strong>Test à l'aveugle.</strong> Sélection calculée comme si on était le ${esc(d.dayLabel(r.W.start))} à 6 h, avec uniquement les matchs joués avant. Les résultats ne servent qu'à noter.</p>
       <div class="kpis">${part('Sélection complète', done)}${part('Top 10', done.filter(b => b.rank <= 10))}${part('Top 30', done.filter(b => b.rank <= 30))}${bySport}
       <div class="kpi"><div class="l">Combinés</div><div class="v num">${cs.length ? `${cs.filter(c => c.result === 'won').length}/${cs.length}` : '-'}</div></div></div>`;
+  }
+
+  // Tennis : seul le 1er match d'un court a une heure fixe, les suivants commencent après le précédent
+  const timeHtml = b => b.sport === 'tennis'
+    ? `<span title="Heure indicative : au tennis, le match commence après la fin du précédent sur le même court (Winamax met l’heure à jour au fil de la journée)">≈ ${d.hm(b.ts)}</span>`
+    : d.hm(b.ts);
+
+  /* ---------- En direct : pronostics dont le match a commencé ---------- */
+  const scoreOf = x => !x ? '' : x.sp === 'tennis' ? x.players[0].sets.map((v, i) => `${v}-${x.players[1].sets[i]}`).join(' ')
+    : x.sp === 'basket' ? `${x.h.pts}-${x.a.pts}` : `${x.h.g}-${x.a.g}`;
+  function liveBets(r) {
+    if (!r || r.replay) return [];
+    const now = Date.now(), seen = new Set();
+    return [...r.top, ...(r.started || [])].filter(b => b.ts <= now && b.ts > now - 6 * 3600000 && !seen.has(b.id) && seen.add(b.id));
+  }
+  let liveBusy = false;
+  async function pollLive() {
+    const list = liveBets(state.result);
+    if (!list.length || liveBusy || document.hidden) return;
+    liveBusy = true;
+    let changed = false;
+    for (const b of list) {
+      const old = state.live[b.id];
+      if (old && old.result) continue; // déjà terminé
+      const l = await App.engine.live(b).catch(() => null);
+      const v = l ? { st: l.x.st, score: scoreOf(l.x), detail: l.x.detail || '', result: l.result } : { st: 'na' };
+      if (JSON.stringify(v) !== JSON.stringify(old)) { state.live[b.id] = v; changed = true; }
+    }
+    liveBusy = false;
+    if (changed && state.tab === 'top' && !state.q.trim()) render();
+  }
+  function renderLive(r) {
+    const list = liveBets(r);
+    if (!list.length) return '';
+    const rank = b => { const l = state.live[b.id]; return !l ? 1 : l.st === 'in' ? 0 : l.result ? 2 : 1; };
+    list.sort((a, b) => rank(a) - rank(b) || a.ts - b.ts);
+    const status = b => {
+      const l = state.live[b.id];
+      if (!l) return '<span style="color:var(--muted)">chargement…</span>';
+      if (l.st === 'na') return '<span style="color:var(--muted)">score non suivi</span>';
+      if (l.result) return `<span class="res-${l.result}">${RES[l.result]}</span>`;
+      if (l.st === 'pre') return `<span style="color:var(--muted)">pas encore commencé${b.sport === 'tennis' ? ' (après le match précédent sur le court)' : ''}</span>`;
+      return '<span style="color:var(--accent)">en cours</span>';
+    };
+    return `<div class="sect live"><h3>En direct <span style="color:var(--muted);font-size:14px">${list.length} pronostic${list.length > 1 ? 's' : ''} dont le match a commencé · mis à jour chaque minute</span></h3>
+      <table class="mini">${list.map(b => { const l = state.live[b.id] || {}; return `<tr><td class="num" style="width:60px;color:var(--muted)">${timeHtml(b)}</td><td>${teamsHtml(b.a)}</td>
+        <td class="num" style="font-weight:600">${esc(l.score || '')} <span style="color:var(--muted);font-weight:400">${esc(l.st === 'in' ? l.detail : '')}</span></td>
+        <td>${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n" style="width:150px">${status(b)}</td></tr>`; }).join('')}</table></div>`;
   }
 
   /* ---------- Sélection (top 100) ---------- */
@@ -187,7 +242,7 @@
     const comps = [...new Set(r.top.map(b => b.comp))].sort().map(c => [c, c]);
     const groups = [...new Set(r.top.map(b => b.group))].sort().map(g => [g, g]);
     const rows = filtered();
-    let html = r.replay ? replaySummary(r) : renderAlerts(r);
+    let html = r.replay ? replaySummary(r) : renderAlerts(r) + renderLive(r);
     html += renderSurprises(r);
     if (r.warnings.length) html += `<p class="warn">${r.warnings.map(esc).join(' · ')}</p>`;
     if (r.extras && !r.extras.ok) html += `<p class="warn">Données ouvertes inactives (xG, arbitres, transferts) : ouvrez l'app avec Lancer.bat pour en profiter.</p>`;
@@ -209,7 +264,7 @@
       const open = state.open === b.id;
       html += `<tr class="row ${b.vr <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
         <td class="rk">${b.vr}</td>
-        <td class="time num">${d.hm(b.ts)}</td>
+        <td class="time num">${timeHtml(b)}</td>
         <td class="comp"><span class="sp">${SP[b.sport]}</span>${esc(b.comp)}</td>
         <td class="mt">${teamsHtml(b.a)}</td>
         <td class="bet">${esc(b.label)}</td>
@@ -222,7 +277,7 @@
       if (open) html += `<tr class="detail"><td colspan="10">${detailHtml(b.a, b.id)}</td></tr>`;
     });
     html += `</tbody></table>
-      <p class="warn" style="margin-top:14px">Fiabilité : probabilité calculée que le pari passe. Cote mini : en dessous de cette cote sur Winamax, le pari ne vaut pas le coup sur la durée. Confiance : quantité de données disponibles (faible = pari déclassé).</p>`;
+      <p class="warn" style="margin-top:14px">Heures du tennis (≈) : indicatives, le match commence à la suite du précédent sur le même court. Fiabilité : probabilité calculée que le pari passe. Cote mini : en dessous de cette cote sur Winamax, le pari ne vaut pas le coup sur la durée. Confiance : quantité de données disponibles (faible = pari déclassé).</p>`;
     return html;
   }
 
@@ -439,8 +494,8 @@
         <label style="width:auto">Paris maximum par match dans le top 100
           <select id="maxPer">${[1, 2, 3, 4, 5].map(n => `<option ${n === S.maxPerMatch ? 'selected' : ''}>${n}</option>`).join('')}</select></label><br>
         <label style="width:auto">Cote juste minimale (en dessous, le pari est écarté)
-          <select id="minOdd">${[1.01, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50].map(n => `<option value="${n}" ${n === S.minOdd ? 'selected' : ''}>${t.num(n, 2)}</option>`).join('')}</select></label>
-        <div class="muted" style="margin-top:4px">Winamax ne propose quasiment jamais de cote sous 1,10 : ces paris très « sûrs » ne sont pas jouables.</div>
+          <select id="minOdd">${[1.01, 1.03, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50].map(n => `<option value="${n}" ${n === S.minOdd ? 'selected' : ''}>${t.num(n, 2)}</option>`).join('')}</select></label>
+        <div class="muted" style="margin-top:4px">Winamax propose des cotes dès 1,01 - 1,03 sur les grands favoris. Montez ce réglage pour voir moins de paris à toute petite cote dans le top 100.</div>
       </fieldset>
       <fieldset><legend>Sources</legend>
         <div class="muted" style="line-height:1.6">
@@ -573,13 +628,14 @@
       state.result = r;
       const flag = `hist|${r.W.key}|${r.ranAt}`;
       if (!(await App.db.get('kv', flag))) { await App.engine.saveHistory(r.W.key, r.top, r.combos); await App.db.put('kv', flag, 1); }
-      dateline(); render();
+      dateline(); render(); await pollLive();
     }
     // Vérifie en arrière-plan les résultats des jours précédents (historique), y compris sur téléphone
     App.engine.settleAll().catch(() => {});
   })();
   pollAlerts();
   setInterval(pollAlerts, 120000);
+  setInterval(pollLive, 60000);
 
   dateline();
   render();

@@ -84,7 +84,7 @@ App.config = {
   // Réglages par défaut (modifiables dans l'onglet Réglages)
   settings: {
     maxPerMatch: 2,   // paris max par match dans le top 100
-    minOdd: 1.15,     // on écarte les paris dont la cote juste est trop basse (injouables chez le bookmaker)
+    minOdd: 1.03,     // on écarte les paris dont la cote juste est trop basse (injouables chez le bookmaker)
     topN: 100,
   },
 };

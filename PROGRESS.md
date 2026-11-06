@@ -99,6 +99,13 @@
   pays Russia / Belarus (ANJ depuis 2022, KHL et VTB retirés des priorités), jeunes et réserves (U15-U23, Sub-20,
   Youth, Junior, Primavera, Reserve). Attention : pas de  dans un heredoc Python non brut (devient ).
 
+## Cotes basses, direct, heures tennis (2026-11-06, V1.10)
+- Cote mini par défaut 1,03 (Winamax propose 1,01-1,03) ; filtres « Cote dès » dès 1,01. Grosses cotes : legs ≥ 1,15.
+- Bloc « En direct » (Sélection) : pronostics dont le match a commencé (< 6 h), score + minute ESPN chaque minute
+  (engine.live), Gagné/Perdu à la fin ; une nouvelle analyse garde les matchs commencés (r.started).
+  Marché (API-Football) : score non suivi en direct. Matchs suspendus/reportés jamais réglés (engine.paused).
+- Tennis : heure « ≈ » (ESPN donne l'heure estimée ; le match suit le précédent sur le court).
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.

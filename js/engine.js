@@ -336,13 +336,15 @@ App.engine = (() => {
     }
   }
 
-  async function findMatch(ref) {
+  // ESPN marque parfois « terminé » un match seulement suspendu (pluie, interruption) ou reporté
+  const paused = x => /SUSPEND|POSTPON|DELAY|INTERRUPT/i.test(`${x.stName || ''} ${x.detail || ''}`);
+  async function findMatch(ref, ttl = 20 * 60000) {
     const dates = [d.ymd(new Date(ref.ts)), d.ymd(new Date(ref.ts - d.DAY)), d.ymd(new Date(ref.ts + d.DAY))];
     for (const y of dates) {
       let list;
-      if (ref.sp === 'soccer') list = await D.soccerDay(ref.lg, y, 20 * 60000);
-      else if (ref.sp === 'tennis') list = await D.tennisDay(ref.lg, y, 20 * 60000);
-      else list = await D.basketDay(ref.lg, y, 20 * 60000);
+      if (ref.sp === 'soccer') list = await D.soccerDay(ref.lg, y, ttl);
+      else if (ref.sp === 'tennis') list = await D.tennisDay(ref.lg, y, ttl);
+      else list = await D.basketDay(ref.lg, y, ttl);
       const x = list.find(z => z.id === ref.id);
       if (x) return x;
     }
@@ -355,6 +357,7 @@ App.engine = (() => {
     const x = await findMatch(b.ref);
     const fn = bb => {
       if (!x) return Date.now() - bb.ts > 3 * d.DAY ? 'void' : null;
+      if (paused(x)) return null; // match suspendu ou reporté : pas encore de résultat
       const mod = bb.sport === 'soccer' ? App.soccer : bb.sport === 'tennis' ? App.tennis : App.basket;
       const r = mod.settle(bb.settle, x);
       return r === undefined ? null : r;
@@ -438,5 +441,20 @@ App.engine = (() => {
     return deserialize(found[0]);
   }
 
-  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote };
+  // Score en direct d'un match de la sélection (rafraîchi toutes les minutes au plus)
+  async function live(b) {
+    if (b.ref.src === 'api') return null;
+    const x = await findMatch(b.ref, 55000).catch(() => null);
+    if (!x) return null;
+    let result = null;
+    if (paused(x)) return { x: { ...x, st: 'in', detail: /POSTPON/i.test(`${x.stName} ${x.detail}`) ? 'reporté' : 'suspendu' }, result };
+    if (x.st === 'post') {
+      const mod = b.sport === 'soccer' ? App.soccer : b.sport === 'tennis' ? App.tennis : App.basket;
+      const r = mod.settle(b.settle, x);
+      result = r === 'void' ? 'void' : r === true ? 'won' : r === false ? 'lost' : null;
+    }
+    return { x, result };
+  }
+
+  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live };
 })();

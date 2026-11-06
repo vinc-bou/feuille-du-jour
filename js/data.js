@@ -120,7 +120,7 @@ App.data = (() => {
     return {
       odds,
       id: e.id, sp: 'soccer', lg, ts: Date.parse(e.date), st: e.status.type.state,
-      stName: e.status.type.name, season: `${(e.season && e.season.year) || ''}|${(e.season && e.season.slug) || ''}`,
+      stName: e.status.type.name, detail: e.status.type.shortDetail || '', season: `${(e.season && e.season.year) || ''}|${(e.season && e.season.slug) || ''}`,
       h, a, goals, cards, detailsOk,
       hasStats: h.cor !== undefined && !isNaN(h.cor),
       venue: c.venue && c.venue.fullName,
@@ -180,7 +180,7 @@ App.data = (() => {
         if (!players[0].name || !players[1].name || /tbd|bye/i.test(players[0].name + players[1].name)) return;
         out.push({
           id: c.id, sp: 'tennis', lg: feed, tour: e.name, tourId: e.id, ts: Date.parse(c.date || e.date),
-          st: c.status.type.state, stName: c.status.type.name || '', round: c.round && c.round.displayName,
+          st: c.status.type.state, stName: c.status.type.name || '', detail: c.status.type.shortDetail || '', round: c.round && c.round.displayName,
           gender, players,
         });
       });
@@ -229,7 +229,7 @@ App.data = (() => {
     const ac = c.competitors.find(x => x !== hc);
     const side = x => ({ ...team(x.team), pts: +x.score || 0, q: (x.linescores || []).map(l => l.value) });
     return { id: e.id, sp: 'basket', lg, ts: Date.parse(e.date), st: e.status.type.state,
-      stName: e.status.type.name, season: String(e.season && e.season.year || ''),
+      stName: e.status.type.name, detail: e.status.type.shortDetail || '', season: String(e.season && e.season.year || ''),
       seasonType: e.season && e.season.type, h: side(hc), a: side(ac) };
   }
   function normBasketList(j, lg) {
