@@ -38,6 +38,18 @@ PRIO = {
     'rugby': ['top 14', 'pro d2', 'premiership', 'united rugby', 'champions cup', 'challenge cup', 'super rugby', 'six nations', 'rugby championship'],
 }
 BOOK_W = {'Pinnacle': 3.0}
+# Championnats déjà analysés en détail par l'app (ESPN) : cotes match par match en dernier
+ESPN_LEAGUES = {39, 61, 140, 135, 78, 94, 88, 144, 203, 179, 62, 40, 2, 3, 848, 45, 48, 66, 143, 137, 81,
+                141, 136, 79, 197, 218, 119, 253, 71, 128, 262, 307}
+# Ordre des pays pour choisir les matchs dont on demande les cotes (quota : ~80 matchs par jour)
+COUNTRIES = ['France', 'England', 'Spain', 'Italy', 'Germany', 'Portugal', 'Netherlands', 'Belgium', 'Turkey',
+             'Scotland', 'Switzerland', 'Austria', 'Ukraine', 'Greece', 'Denmark', 'Sweden', 'Norway', 'Poland',
+             'Czech-Republic', 'Croatia', 'Serbia', 'Romania', 'Russia', 'Israel', 'Cyprus', 'Bulgaria', 'Hungary',
+             'Slovakia', 'Slovenia', 'Ireland', 'Wales', 'Northern-Ireland', 'Finland', 'Iceland', 'World',
+             'Brazil', 'Argentina', 'USA', 'Mexico', 'Colombia', 'Chile', 'Uruguay', 'Paraguay', 'Peru', 'Ecuador',
+             'Japan', 'South-Korea', 'Saudi-Arabia', 'Qatar', 'United-Arab-Emirates', 'Australia', 'China', 'Morocco',
+             'Egypt', 'Algeria', 'Tunisia']
+SKIP = ('u17', 'u18', 'u19', 'u20', 'u21', 'u23', 'youth', 'women', 'reserve', 'friendlies', 'primavera', 'feminine', 'femenina', 'frauen')
 
 
 def key():
@@ -229,7 +241,7 @@ def soccer(c, day, prev):
                        'logo': f['league'].get('logo'), 'round': f['league'].get('round')},
             'h': team(f['teams']['home']), 'a': team(f['teams']['away']), 'markets': []}
     page, total = 1, 1
-    while page <= total:
+    while page <= min(total, 3):  # formule gratuite : 3 pages maximum (30 matchs)
         d = c.get(f'/odds?date={day}&timezone={TZ}&page={page}')
         if not d:
             break
@@ -239,8 +251,27 @@ def soccer(c, day, prev):
             if m:
                 m['markets'] = consensus(r.get('bookmakers') or [], 'soccer')
         page += 1
-    scores = {}
+    # Scores d'hier d'abord (historique), puis cotes match par match avec le quota restant
     res = c.get(f'/fixtures?date={prev}&timezone={TZ}') or {}
+
+    def prio(m):
+        lg = m['league']
+        name = (lg['name'] or '').lower()
+        country = lg['country'] or ''
+        rank = COUNTRIES.index(country) if country in COUNTRIES else 90
+        second = 1 if any(k in name for k in ('2', ' ii', 'second', 'segunda', 'serie b', 'liga 2', 'championship', 'national', 'regional', '3')) else 0
+        covered = 1 if lg['id'] in ESPN_LEAGUES else 0
+        return (covered, second, rank, m['ts'])
+    cands = [m for m in matches.values() if m['status'] == 'NS' and not m['markets']
+             and not any(k in (m['league']['name'] or '').lower() for k in SKIP)]
+    for m in sorted(cands, key=prio):
+        d = c.get(f'/odds?fixture={m["id"]}')
+        if d is None:
+            break
+        r = d.get('response') or []
+        if r:
+            m['markets'] = consensus(r[0].get('bookmakers') or [], 'soccer')
+    scores = {}
     for f in (res.get('response') or []) + (fx.get('response') or []):
         st = f['fixture']['status']['short']
         if st in ('FT', 'AET', 'PEN'):

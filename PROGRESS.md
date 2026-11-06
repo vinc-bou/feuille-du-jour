@@ -66,6 +66,19 @@
   abonnement-ntfy.txt). Premier essai sur GitHub : 100 paris, 44 matchs en 58 s, ESPN accepte GitHub.
 - Fichiers de l'app versionnés (?v=5 dans index.html) : augmenter à chaque mise à jour.
 
+## Tous les matchs des bookmakers : API-Football gratuit (2026-11-06, V1.6)
+- Clé dans le secret GitHub APIFOOTBALL_KEY (jamais en clair). Formule Free : 100 req/jour/sport, 10/min,
+  dates hier-aujourd'hui-demain seulement, saison en cours bloquée pour classements/historique,
+  odds?date limité à 3 pages (30 matchs) ; odds?fixture OK ; quota remis à 0 h UTC.
+- collecte_api.py (avant l'analyse de nuit) : foot = matchs du jour + 3 pages de cotes + ~80 cotes match par
+  match (priorité : non couverts par ESPN, D1, pays européens, sans jeunes/réserves) ; basket, hockey, handball,
+  volley, rugby = matchs du jour + cotes match par match (compétitions prioritaires). Probabilités = moyenne
+  des bookmakers marge retirée (Pinnacle ×3). Sortie privée cache/api/AAAAMMJJ.json (non publiée, conditions
+  API) + en-ligne/scores-api.json (scores, pour l'historique).
+- js/marche.js : analyses « marché » pour les matchs non analysés en détail ; Pinnacle sert aussi d'avis du
+  marché pour les matchs ESPN. Test 06/11 : 108 matchs analysés (44 avant), 6 sports.
+- PC sans clé : pas de données marché en local ; l'app du PC affiche la version en ligne si plus complète.
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.
