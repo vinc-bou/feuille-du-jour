@@ -372,7 +372,8 @@
     const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard' && !v.extra);
     const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard' && !v.extra);
     const done = bets.filter(v => v.result === 'won' || v.result === 'lost');
-    if (!allBets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
+    const noPlay = '<div class="sect"><h3>Mes paris joués</h3><div class="empty" style="padding:18px">Aucun pari marqué pour l’instant. Cochez la case <strong>Joué</strong> devant un pari (Sélection) ou « Je le joue » sur un combiné : il apparaîtra ici avec son résultat et votre taux de réussite.</div></div>';
+    if (!allBets.length) return noPlay + '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
     const rate = l => { const w = l.filter(v => v.result === 'won').length; return l.length ? w / l.length : 0; };
     const exp = l => l.length ? l.reduce((a, b) => a + b.bet.p, 0) / l.length : 0;
     const cDone = combos.filter(v => v.result === 'won' || v.result === 'lost');
@@ -388,7 +389,7 @@
       <table class="mini">${myBets.sort((a, b) => b.bet.ts - a.bet.ts).slice(0, 40).map(histRow).join('')}</table>
       ${myCombos.length ? `<table class="mini" style="margin-top:8px">${myCombos.sort((a, b) => b.legs[0].ts - a.legs[0].ts).slice(0, 20).map(v => `<tr><td><span class="mine">Joué</span> Combiné ${v.legs.length} paris : ${v.legs.map(l => esc(l.label)).join(' + ')}</td><td class="n">${t.num(1 / v.p, 2)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`).join('')}</table>` : ''}
       </div><h3 style="margin-top:26px;font-family:var(--cond);text-transform:uppercase">Toute la sélection</h3>`;
-    }
+    } else html += noPlay + '<h3 style="margin-top:26px;font-family:var(--cond);text-transform:uppercase">Toute la sélection</h3>';
     html += `<div class="kpis">
       <div class="kpi"><div class="l">Paris vérifiés</div><div class="v num">${done.length}</div></div>
       <div class="kpi"><div class="l">Taux de réussite réel</div><div class="v num">${done.length ? t.pct(rate(done)) : '-'}</div></div>
