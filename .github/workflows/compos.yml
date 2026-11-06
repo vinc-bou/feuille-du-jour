@@ -1,0 +1,71 @@
+# Surveillance des compositions officielles des matchs de la sélection, toutes les 15 minutes.
+# N'alerte (notification ntfy sur le téléphone) que si un pari de la sélection est concerné.
+name: Compositions
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: donnees
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Paris
+  FEUILLE_CLOUD: '1'
+  FEUILLE_RESULTATS: en-ligne
+
+jobs:
+  compos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Y a-t-il un match de la sélection bientôt ?
+        id: besoin
+        run: |
+          python - <<'PY'
+          import json, os, time
+          try:
+              d = json.load(open('en-ligne/dernier.json', encoding='utf-8'))
+          except Exception:
+              d = None
+          now = time.time()
+          go = False
+          if d:
+              idx = {b['ai'] for b in d.get('top', [])}
+              for i in idx:
+                  a = d['analyses'][i]
+                  ko = a['match']['ts'] / 1000
+                  if a['sport'] in ('soccer', 'tennis') and ko - 80 * 60 <= now <= ko + 20 * 60:
+                      go = True
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"go={'1' if go else '0'}\n")
+          print('Match proche :', go)
+          PY
+
+      - uses: actions/setup-python@v5
+        if: steps.besoin.outputs.go == '1'
+        with:
+          python-version: '3.12'
+
+      - name: Lecture des compositions
+        if: steps.besoin.outputs.go == '1'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python surveillance.py --une-fois
+
+      - name: Enregistrement des alertes
+        if: steps.besoin.outputs.go == '1'
+        run: |
+          git config user.name "feuille-du-jour"
+          git config user.email "feuille-du-jour@users.noreply.github.com"
+          git add -A en-ligne
+          git commit -m "Compositions $(date +%H:%M)" || exit 0
+          git pull --rebase
+          git push

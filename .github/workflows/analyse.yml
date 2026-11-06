@@ -1,0 +1,72 @@
+# Analyse du jour, chaque nuit à 00 h 10 (heure de Paris), sur les serveurs gratuits de GitHub.
+name: Analyse du jour
+
+on:
+  schedule:
+    - cron: '10 22 * * *'   # 00 h 10 en heure d'été (UTC+2)
+    - cron: '10 23 * * *'   # 00 h 10 en heure d'hiver (UTC+1)
+  workflow_dispatch: {}      # bouton « Run workflow » pour lancer à la main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: donnees
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Paris
+  FEUILLE_CLOUD: '1'
+  FEUILLE_RESULTATS: en-ligne
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Est-ce bien minuit à Paris ?
+        id: heure
+        run: |
+          h=$(date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$h" = "00" ] || [ "$h" = "01" ]; then
+            echo "go=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "Il est $h h à Paris : ce déclenchement n'est pas le bon (changement d'heure), on passe."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.heure.outputs.go == '1'
+
+      - uses: actions/setup-python@v5
+        if: steps.heure.outputs.go == '1'
+        with:
+          python-version: '3.12'
+
+      - name: Données déjà téléchargées les nuits précédentes
+        if: steps.heure.outputs.go == '1'
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            profil-auto
+          key: donnees-${{ github.run_id }}
+          restore-keys: donnees-
+
+      - name: Analyse (navigateur invisible)
+        if: steps.heure.outputs.go == '1'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python auto.py --quitter-serveur && cat en-ligne/auto.log | tail -3
+
+      - name: Publication de la sélection
+        if: steps.heure.outputs.go == '1'
+        run: |
+          git config user.name "feuille-du-jour"
+          git config user.email "feuille-du-jour@users.noreply.github.com"
+          rm -f en-ligne/erreur-auto.txt
+          # garde 14 jours d'analyses
+          ls en-ligne/2*.json 2>/dev/null | sort | head -n -14 | xargs -r rm -f
+          git add -A en-ligne
+          git commit -m "Analyse du $(date +%d/%m/%Y)" || exit 0
+          git pull --rebase
+          git push

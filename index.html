@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feuille du jour</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=5">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <div class="wordmark">Feuille du jour</div>
+      <div class="dateline" id="dateline"></div>
+    </div>
+    <div class="actions">
+      <div class="seg" id="daySeg">
+        <button data-day="-2">Avant-hier</button>
+        <button data-day="-1">Hier</button>
+        <button data-day="0" class="on">Aujourd'hui</button>
+        <button data-day="1">Demain</button>
+      </div>
+      <button class="run" id="runBtn">Analyser</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="top" class="on">Sélection</button>
+    <button data-tab="combos">Combinés</button>
+    <button data-tab="matches">Matchs</button>
+    <button data-tab="history">Historique</button>
+    <button data-tab="settings">Réglages</button>
+  </nav>
+
+  <div class="status" id="status" hidden>
+    <span id="statusText"></span>
+    <div class="progress"><div id="progressBar"></div></div>
+  </div>
+
+  <main id="view"></main>
+
+  <footer class="foot">
+    Données : ESPN, football-data.co.uk, Transfermarkt (jeu de données ouvert). Pronostics calculés, aucun gain garanti. Jouer comporte des risques : 09 74 75 13 13 (Joueurs Info Service).
+  </footer>
+
+  <script src="js/config.js?v=5"></script>
+  <script src="js/core.js?v=5"></script>
+  <script src="js/data.js?v=5"></script>
+  <script src="js/soccer.js?v=5"></script>
+  <script src="js/tennis.js?v=5"></script>
+  <script src="js/basket.js?v=5"></script>
+  <script src="js/extras.js?v=5"></script>
+  <script src="js/engine.js?v=5"></script>
+  <script src="js/ui.js?v=5"></script>
+</body>
+</html>

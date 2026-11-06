@@ -1,0 +1,8 @@
+# Données locales (téléchargements, navigateur invisible, résultats du PC) : jamais publiées
+cache/
+profil-auto/
+resultats/
+ntfy.txt
+__pycache__/
+*.tmp
+.claude/
