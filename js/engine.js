@@ -319,20 +319,20 @@ App.engine = (() => {
     // On retire les anciens pronostics de matchs pas encore commencés qui ne sont plus dans la sélection
     for (const [k, v] of existing) {
       const started = v.type === 'B' ? v.bet.ts <= now : v.legs.some(l => l.ts <= now);
-      if (!keep.has(k) && !started && v.result === null) await App.db.del('history', k);
+      if (!keep.has(k) && !started && v.result === null && !v.played) await App.db.del('history', k);
     }
     const exMap = new Map(existing);
     for (const b of top) {
       const k = `${dayKey}|B|${b.id}`;
       const prev = exMap.get(k);
       if (prev && b.ts <= now) continue; // match commencé : on garde le pronostic d'origine
-      await App.db.put('history', k, { type: 'B', day: dayKey, bet: slim(b), result: prev ? prev.result : null, savedAt: now, at: at || now });
+      await App.db.put('history', k, { type: 'B', day: dayKey, bet: slim(b), result: prev ? prev.result : null, savedAt: now, at: at || now, played: !!(prev && prev.played) });
     }
     for (const c of [...combos.doubles, ...combos.triples, ...H]) {
       const k = `${dayKey}|C|${c.id}`;
       const prev = exMap.get(k);
       if (prev && c.legs.some(l => l.ts <= now)) continue;
-      await App.db.put('history', k, { type: 'C', day: dayKey, p: c.p, legs: c.legs.map(slim), kind: c.kind || '', target: c.target, result: prev ? prev.result : null, savedAt: now, at: at || now });
+      await App.db.put('history', k, { type: 'C', day: dayKey, p: c.p, legs: c.legs.map(slim), kind: c.kind || '', target: c.target, result: prev ? prev.result : null, savedAt: now, at: at || now, played: !!(prev && prev.played) });
     }
   }
 
@@ -456,5 +456,18 @@ App.engine = (() => {
     return { x, result };
   }
 
-  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live };
+  // Case « je joue ce pari » : enregistré dans l'historique (créé s'il n'y était pas : pari hors top 100)
+  async function togglePlayed(dayKey, item, isCombo) {
+    const k = `${dayKey}|${isCombo ? 'C' : 'B'}|${item.id}`;
+    let v = await App.db.get('history', k);
+    if (!v) v = isCombo
+      ? { type: 'C', day: dayKey, p: item.p, legs: item.legs.map(slim), kind: item.kind || '', target: item.target, result: null, savedAt: Date.now(), at: Date.now(), extra: true }
+      : { type: 'B', day: dayKey, bet: slim(item), result: null, savedAt: Date.now(), at: Date.now(), extra: true };
+    v.played = !v.played;
+    v.playedAt = v.played ? Date.now() : undefined;
+    if (!v.played && v.extra) await App.db.del('history', k); else await App.db.put('history', k, v);
+    return v.played;
+  }
+
+  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed };
 })();

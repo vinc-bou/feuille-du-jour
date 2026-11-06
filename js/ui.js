@@ -4,8 +4,8 @@
   const $ = s => document.querySelector(s);
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
-  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '' }, open: null,
-    sort: 'rel', rev: false, live: {}, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
+  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '', mine: '' }, open: null,
+    sort: 'rel', rev: false, live: {}, played: new Set(), liveMine: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
   // Tri (Sélection) : [nom, ordre normal, ordre inversé, comparaison dans l'ordre normal]
   // Un clic sur un titre de colonne trie ; un 2e clic sur la même colonne inverse l'ordre.
   const RESO = { won: 0, lost: 1, void: 2 };
@@ -126,7 +126,7 @@
   function liveBets(r) {
     if (!r || r.replay) return [];
     const now = Date.now(), seen = new Set();
-    return [...r.top, ...(r.started || [])].filter(b => b.ts <= now && b.ts > now - 6 * 3600000 && !seen.has(b.id) && seen.add(b.id));
+    return [...r.top, ...(r.started || []), ...r.all.filter(b => state.played.has(b.id))].filter(b => b.ts <= now && b.ts > now - 6 * 3600000 && !seen.has(b.id) && seen.add(b.id));
   }
   let liveBusy = false;
   async function pollLive() {
@@ -142,11 +142,14 @@
       if (JSON.stringify(v) !== JSON.stringify(old)) { state.live[b.id] = v; changed = true; }
     }
     liveBusy = false;
-    if (changed && state.tab === 'top' && !state.q.trim()) render();
+    if (changed && state.tab === 'live' && !state.q.trim()) render();
   }
   function renderLive(r) {
-    const list = liveBets(r);
-    if (!list.length) return '';
+    let list = liveBets(r);
+    const mine = list.filter(b => state.played.has(b.id)).length;
+    if (state.liveMine) list = list.filter(b => state.played.has(b.id));
+    const bar = `<div class="filters"><label class="chk"><input type="checkbox" id="liveMine" ${state.liveMine ? 'checked' : ''}> Seulement mes paris joués (${mine})</label></div>`;
+    if (!list.length) return bar + `<div class="empty">${state.liveMine ? 'Aucun de vos paris joués n’a commencé.' : 'Aucun match de la sélection n’a encore commencé.'}<br>Les pronostics apparaissent ici dès le coup d’envoi, avec le score mis à jour chaque minute.</div>`;
     const rank = b => { const l = state.live[b.id]; return !l ? 1 : l.st === 'in' ? 0 : l.result ? 2 : 1; };
     list.sort((a, b) => rank(a) - rank(b) || a.ts - b.ts);
     const status = b => {
@@ -157,10 +160,10 @@
       if (l.st === 'pre') return `<span style="color:var(--muted)">pas encore commencé${b.sport === 'tennis' ? ' (après le match précédent sur le court)' : ''}</span>`;
       return '<span style="color:var(--accent)">en cours</span>';
     };
-    return `<div class="sect live"><h3>En direct <span style="color:var(--muted);font-size:14px">${list.length} pronostic${list.length > 1 ? 's' : ''} dont le match a commencé · mis à jour chaque minute</span></h3>
+    return bar + `<div class="sect live"><h3>En direct <span style="color:var(--muted);font-size:14px">${list.length} pronostic${list.length > 1 ? 's' : ''} dont le match a commencé · mis à jour chaque minute</span></h3>
       <table class="mini">${list.map(b => { const l = state.live[b.id] || {}; return `<tr><td class="num" style="width:60px;color:var(--muted)">${timeHtml(b)}</td><td>${teamsHtml(b.a)}</td>
         <td class="num" style="font-weight:600">${esc(l.score || '')} <span style="color:var(--muted);font-weight:400">${esc(l.st === 'in' ? l.detail : '')}</span></td>
-        <td>${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n" style="width:150px">${status(b)}</td></tr>`; }).join('')}</table></div>`;
+        <td>${state.played.has(b.id) ? '<span class="mine">Joué</span> ' : ''}${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n" style="width:150px">${status(b)}</td></tr>`; }).join('')}</table></div>`;
   }
 
   /* ---------- Sélection (top 100) ---------- */
@@ -182,7 +185,9 @@
     const f = state.filters;
     const odds = f.oddMin || f.oddMax;
     if (!odds) state.result.top.forEach(b => { b.vr = b.rank; });
-    return (odds ? rerank(f) : state.result.top).filter(b => {
+    let base = odds ? rerank(f) : state.result.top;
+    if (f.mine) { const seen = new Set(); base = [...base, ...state.result.all].filter(b => state.played.has(b.id) && !seen.has(b.id) && seen.add(b.id)); base.forEach(b => { if (b.vr === undefined) b.vr = b.rank || 999; }); }
+    return base.filter(b => {
       if (f.sport && b.sport !== f.sport) return false;
       if (f.comp && b.comp !== f.comp) return false;
       if (f.group && b.group !== f.group) return false;
@@ -242,7 +247,9 @@
     const comps = [...new Set(r.top.map(b => b.comp))].sort().map(c => [c, c]);
     const groups = [...new Set(r.top.map(b => b.group))].sort().map(g => [g, g]);
     const rows = filtered();
-    let html = r.replay ? replaySummary(r) : renderAlerts(r) + renderLive(r);
+    let html = r.replay ? replaySummary(r) : renderAlerts(r);
+    const nLive = r.replay ? 0 : liveBets(r).length;
+    if (nLive) html += `<p class="warn" style="color:var(--text)"><a href="#" data-gotab="live" style="color:var(--accent)">${nLive} match${nLive > 1 ? 's' : ''} de la sélection en cours ou terminé${nLive > 1 ? 's' : ''} : voir l’onglet En direct</a></p>`;
     html += renderSurprises(r);
     if (r.warnings.length) html += `<p class="warn">${r.warnings.map(esc).join(' · ')}</p>`;
     if (r.extras && !r.extras.ok) html += `<p class="warn">Données ouvertes inactives (xG, arbitres, transferts) : ouvrez l'app avec Lancer.bat pour en profiter.</p>`;
@@ -253,16 +260,18 @@
       <select data-f="time">${options([['a', 'Avant 15 h'], ['b', '15 h - 19 h'], ['c', '19 h - 23 h'], ['n', 'Nuit (23 h - 6 h)']], f.time, 'Toute la journée')}</select>
       <select data-f="oddMin">${options(ODDS.map(o => [String(o), 'Cote dès ' + t.num(o, 2)]), f.oddMin, 'Cote : pas de minimum')}</select>
       <select data-f="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), f.oddMax, 'Cote : pas de maximum')}</select>
+      <select data-f="mine">${options([['1', `Mes paris joués (${state.played.size})`]], f.mine, 'Tous les paris')}</select>
       <input data-f="q" placeholder="Équipe, joueur…" value="${esc(f.q)}">
       <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).filter(([k]) => k !== 'res' || r.replay).map(([k, v]) => [0, 1].map(rv => `<option value="${k}|${rv}" ${k === state.sort && !!rv === state.rev ? 'selected' : ''}>Trier : ${v[0]} (${v[1 + rv]})</option>`).join('')).join('')}</select>
       <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''}${f.oddMin || f.oddMax ? ' dans cette fourchette de cotes' : ''} · ${r.analyses.length} matchs analysés</span>
     </div>`;
     if (!rows.length) return html + `<div class="empty">Aucun pari ne correspond à ces filtres.</div>`;
     const th = (k, txt, st) => `<th data-sort="${k}" class="${state.sort === k ? 'sorted' : ''}" ${st ? `style="${st}"` : ''} title="Trier (cliquer à nouveau pour inverser)">${txt}${state.sort === k ? (state.rev ? ' ▲' : ' ▼') : ''}</th>`;
-    html += `<table class="grid"><thead><tr><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
+    html += `<table class="grid"><thead><tr><th class="pl" title="Cochez les paris que vous jouez">Joué</th><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
     rows.forEach(b => {
       const open = state.open === b.id;
       html += `<tr class="row ${b.vr <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
+        <td class="pl"><input type="checkbox" data-play="${esc(b.id)}" ${state.played.has(b.id) ? 'checked' : ''} title="Je joue ce pari"></td>
         <td class="rk">${b.vr}</td>
         <td class="time num">${timeHtml(b)}</td>
         <td class="comp"><span class="sp">${SP[b.sport]}</span>${esc(b.comp)}</td>
@@ -274,7 +283,7 @@
         <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
         ${r.replay ? `<td class="res res-${b.result}">${RES[b.result] || ''}<div style="color:var(--dim);font-size:12px">${esc(realScore(b.a))}</div></td>` : ''}
       </tr>`;
-      if (open) html += `<tr class="detail"><td colspan="10">${detailHtml(b.a, b.id)}</td></tr>`;
+      if (open) html += `<tr class="detail"><td colspan="11">${detailHtml(b.a, b.id)}</td></tr>`;
     });
     html += `</tbody></table>
       <p class="warn" style="margin-top:14px">Heures du tennis (≈) : indicatives, le match commence à la suite du précédent sur le même court. Fiabilité : probabilité calculée que le pari passe. Cote mini : en dessous de cette cote sur Winamax, le pari ne vaut pas le coup sur la durée. Confiance : quantité de données disponibles (faible = pari déclassé).</p>`;
@@ -293,16 +302,17 @@
       <select data-cf="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), cf.oddMax, 'Cote : pas de maximum')}</select>
       <select data-cf="sort" class="sortsel">${Object.entries(csorts).map(([k, v]) => `<option value="${k}" ${k === cf.sort ? 'selected' : ''}>Trier : ${v[0]}</option>`).join('')}</select>
     </div>`;
+    const playBox = c => `<label class="chk play"><input type="checkbox" data-playc="${esc(c.id)}" ${state.played.has(c.id) ? 'checked' : ''}> Je le joue</label>`;
     const block = (title, list) => `<h3>${title}</h3>` + (list.length ? list.map(c => `
-      <div class="combo">
-        <div class="legs">${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${d.hm(l.ts)} · ${t.pct(l.p)}</span></div>`).join('')}</div>
+      <div class="combo ${state.played.has(c.id) ? 'is-played' : ''}">
+        <div class="legs">${playBox(c)}${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${d.hm(l.ts)} · ${t.pct(l.p)}</span></div>`).join('')}</div>
         <div class="cf"><span class="rel"><span class="v num" style="font-family:var(--cond);font-weight:700;font-size:18px">${t.pct(c.p)}</span></span><div class="bar"><div style="width:${Math.round(c.p * 100)}%"></div></div></div>
         <div class="odd num">${t.odd(c.p)}<div style="font-size:11px;color:var(--muted);font-family:var(--body);font-weight:400">cote mini</div>${c.result ? `<div class="res-${c.result}" style="font-family:var(--body);font-size:13px">${RES[c.result]}</div>` : ''}</div>
       </div>`).join('') : '<div class="empty">Aucun combiné ne correspond (filtre de cote, ou pas assez de matchs différents).</div>');
     const H = state.result.combos.hard || [];
     const hard = `<h3>Grosses cotes du jour</h3>` + (H.length ? `<div class="hard">${[5, 10, 15].map(T => H.filter(c => c.target === T).map(c => `
-      <div class="combo">
-        <div class="legs"><div class="tgt">Cote visée ${T} · ${c.style === 'courte' ? 'version courte' : 'version sûre'} · ${c.legs.length} pari${c.legs.length > 1 ? 's' : ''}</div>${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${esc(SP[l.sport] || '')} · ${d.hm(l.ts)} · ${t.pct(l.p)} · cote mini ${t.odd(l.p)}</span></div>`).join('')}</div>
+      <div class="combo ${state.played.has(c.id) ? 'is-played' : ''}">
+        <div class="legs">${playBox(c)}<div class="tgt">Cote visée ${T} · ${c.style === 'courte' ? 'version courte' : 'version sûre'} · ${c.legs.length} pari${c.legs.length > 1 ? 's' : ''}</div>${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${esc(SP[l.sport] || '')} · ${d.hm(l.ts)} · ${t.pct(l.p)} · cote mini ${t.odd(l.p)}</span></div>`).join('')}</div>
         <div class="cf"><span class="rel"><span class="v num" style="font-family:var(--cond);font-weight:700;font-size:18px">${t.pct(c.p)}</span></span><div class="bar"><div style="width:${Math.max(2, Math.round(c.p * 100))}%"></div></div></div>
         <div class="odd num">${t.num(1 / c.p, 2)}<div style="font-size:11px;color:var(--muted);font-family:var(--body);font-weight:400">cote mini</div>${c.result ? `<div class="res-${c.result}" style="font-family:var(--body);font-size:13px">${RES[c.result]}</div>` : ''}</div>
       </div>`).join('')).join('')}</div>
@@ -349,22 +359,37 @@
   }
   function histRow(v) {
     const b = v.bet;
-    return `<tr class="hrow" data-h="${esc(v._k)}"><td class="n" style="width:30px;color:var(--muted)">${b.rank}</td><td>${esc(b.label)}</td><td style="color:var(--muted)">${esc(b.matchName)}</td><td class="n" style="color:var(--muted)">${d.hm(b.ts)}</td><td class="n">${t.pct(b.p)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`
+    return `<tr class="hrow ${v.played ? 'is-played' : ''}" data-h="${esc(v._k)}"><td class="n" style="width:30px;color:var(--muted)">${v.extra ? '' : b.rank}</td><td>${v.played ? '<span class="mine">Joué</span> ' : ''}${esc(b.label)}</td><td style="color:var(--muted)">${esc(b.matchName)}</td><td class="n" style="color:var(--muted)">${d.hm(b.ts)}</td><td class="n">${t.pct(b.p)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`
       + (state.hopen === v._k ? `<tr class="hdetail"><td colspan="6">${histDetail(v)}</td></tr>` : '');
   }
   async function renderHistory() {
     const raw = await App.db.all('history');
     raw.forEach(([k, v]) => { v._k = k; });
     const entries = raw.map(([k, v]) => v);
-    const bets = entries.filter(v => v.type === 'B');
-    const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard');
-    const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard');
+    const allBets = entries.filter(v => v.type === 'B');
+    const myBets = allBets.filter(v => v.played), myCombos = entries.filter(v => v.type === 'C' && v.played);
+    const bets = allBets.filter(v => !v.extra); // statistiques de la sélection : sans les paris ajoutés à la main
+    const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard' && !v.extra);
+    const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard' && !v.extra);
     const done = bets.filter(v => v.result === 'won' || v.result === 'lost');
-    if (!bets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
+    if (!allBets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
     const rate = l => { const w = l.filter(v => v.result === 'won').length; return l.length ? w / l.length : 0; };
     const exp = l => l.length ? l.reduce((a, b) => a + b.bet.p, 0) / l.length : 0;
     const cDone = combos.filter(v => v.result === 'won' || v.result === 'lost');
-    let html = `<div class="kpis">
+    const wl = l => l.filter(v => v.result === 'won' || v.result === 'lost');
+    const myDone = wl(myBets), myCDone = wl(myCombos);
+    let html = '';
+    if (myBets.length || myCombos.length) {
+      html += `<div class="sect"><h3>Mes paris joués</h3><div class="kpis">
+        <div class="kpi"><div class="l">Paris simples gagnés</div><div class="v num">${myDone.length ? `${myDone.filter(v => v.result === 'won').length}/${myDone.length}` : '-'}</div><div class="l">${myDone.length ? `${t.pct(rate(myDone))} réel · ${t.pct(exp(myDone))} annoncé` : ''}</div></div>
+        <div class="kpi"><div class="l">Combinés gagnés</div><div class="v num">${myCDone.length ? `${myCDone.filter(v => v.result === 'won').length}/${myCDone.length}` : '-'}</div></div>
+        <div class="kpi"><div class="l">En attente</div><div class="v num">${myBets.filter(v => v.result === null).length + myCombos.filter(v => v.result === null).length}</div></div>
+      </div>
+      <table class="mini">${myBets.sort((a, b) => b.bet.ts - a.bet.ts).slice(0, 40).map(histRow).join('')}</table>
+      ${myCombos.length ? `<table class="mini" style="margin-top:8px">${myCombos.sort((a, b) => b.legs[0].ts - a.legs[0].ts).slice(0, 20).map(v => `<tr><td><span class="mine">Joué</span> Combiné ${v.legs.length} paris : ${v.legs.map(l => esc(l.label)).join(' + ')}</td><td class="n">${t.num(1 / v.p, 2)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`).join('')}</table>` : ''}
+      </div><h3 style="margin-top:26px;font-family:var(--cond);text-transform:uppercase">Toute la sélection</h3>`;
+    }
+    html += `<div class="kpis">
       <div class="kpi"><div class="l">Paris vérifiés</div><div class="v num">${done.length}</div></div>
       <div class="kpi"><div class="l">Taux de réussite réel</div><div class="v num">${done.length ? t.pct(rate(done)) : '-'}</div></div>
       <div class="kpi"><div class="l">Fiabilité annoncée (moyenne)</div><div class="v num">${done.length ? t.pct(exp(done)) : '-'}</div></div>
@@ -532,6 +557,7 @@
       return;
     }
     if (state.tab === 'top') view.innerHTML = renderTop();
+    else if (state.tab === 'live') view.innerHTML = renderLive(state.result);
     else if (state.tab === 'combos') view.innerHTML = renderCombos();
     else if (state.tab === 'matches') view.innerHTML = renderMatches();
   }
@@ -548,6 +574,7 @@
   $('#tabs').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     state.tab = b.dataset.tab; state.open = null; state.hopen = null; clearSearch(); render();
+    if (state.tab === 'live') pollLive();
   });
   const sInput = $('#search');
   const clearSearch = () => { state.q = ''; sInput.value = ''; };
@@ -582,6 +609,16 @@
     }, 250);
   });
   view.addEventListener('click', async e => {
+    const pb = e.target.closest('input[data-play], input[data-playc]');
+    if (pb) {
+      const isC = !!pb.dataset.playc, id = isC ? pb.dataset.playc : pb.dataset.play;
+      const r = state.result, C = r.combos;
+      const item = isC ? [...C.doubles, ...C.triples, ...(C.hard || [])].find(c => c.id === id) : findBet(id);
+      if (!item) return;
+      const on = await App.engine.togglePlayed(r.W.key, item, isC);
+      if (on) state.played.add(id); else state.played.delete(id);
+      render(); return;
+    }
     // Clic sur un titre de colonne : tri (un 2e clic sur « Cote mini » inverse l'ordre)
     const th = e.target.closest('th[data-sort]');
     if (th) {
@@ -591,6 +628,9 @@
     }
     const row = e.target.closest('tr.row');
     if (row) { state.open = state.open === row.dataset.id ? null : row.dataset.id; render(); return; }
+    if (e.target.id === 'liveMine') { state.liveMine = e.target.checked; render(); return; }
+    const gt = e.target.closest('[data-gotab]');
+    if (gt) { e.preventDefault(); document.querySelector(`#tabs button[data-tab="${gt.dataset.gotab}"]`).click(); return; }
     const gd = e.target.closest('[data-goday]');
     if (gd) { clearSearch(); document.querySelector(`#daySeg button[data-day="${gd.dataset.goday}"]`).click(); return; }
     const hit = e.target.closest('.hit');
@@ -633,6 +673,8 @@
     // Vérifie en arrière-plan les résultats des jours précédents (historique), y compris sur téléphone
     App.engine.settleAll().catch(() => {});
   })();
+  // Paris cochés « je joue » (gardés sur cet appareil, dans l'historique)
+  App.db.all('history').then(list => { list.forEach(([k, v]) => { if (v.played) state.played.add(v.type === 'B' ? v.bet.id : k.split('|').slice(2).join('|')); }); if (state.played.size && state.result) render(); });
   pollAlerts();
   setInterval(pollAlerts, 120000);
   setInterval(pollLive, 60000);

@@ -198,3 +198,24 @@ tr.detail td { background: var(--panel); padding: 12px 16px 14px 50px; }
 /* ---- Grosses cotes ---- */
 .hard .combo .odd { color: var(--accent); }
 .hard .tgt { font-family: var(--cond); font-size: 13px; text-transform: uppercase; color: var(--muted); }
+
+/* ---- Paris joués ---- */
+.grid td.pl, .grid th.pl { width: 34px; text-align: center; }
+.grid td.pl input, .chk input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; vertical-align: middle; }
+.chk { color: var(--muted); cursor: pointer; user-select: none; }
+.combo .play { display: block; margin-bottom: 4px; font-size: 13px; }
+.combo.is-played { border-left: 2px solid var(--accent); padding-left: 10px; }
+.mine { font-family: var(--cond); font-size: 12px; text-transform: uppercase; color: var(--bg); background: var(--accent); padding: 1px 5px; border-radius: 2px; margin-right: 4px; }
+
+@media (max-width: 760px) {
+  /* case « joué » sous le numéro, à gauche */
+  .grid tr.row { grid-template-areas: "rk match rel" "pl bet odd" "pl meta conf"; }
+  .grid td.pl { grid-area: pl; width: auto; text-align: left; }
+  /* en-tête fixe plus compact sur téléphone */
+  .top { padding: 8px 14px 8px; gap: 8px; }
+  .top .wordmark { font-size: 22px; white-space: nowrap; }
+  .top .dateline { font-size: 12px; }
+  .top .dateline { display: inline; margin-left: 8px; }
+  .top .brand { display: flex; align-items: baseline; }
+  .searchbar input { padding: 7px 10px; font-size: 14px; }
+}

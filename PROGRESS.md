@@ -106,6 +106,12 @@
   Marché (API-Football) : score non suivi en direct. Matchs suspendus/reportés jamais réglés (engine.paused).
 - Tennis : heure « ≈ » (ESPN donne l'heure estimée ; le match suit le précédent sur le court).
 
+## Onglet En direct + paris joués (2026-11-06, V1.11)
+- Onglet « En direct » (le bloc quitte la Sélection, lien rappel) ; option « seulement mes paris joués ».
+- Case « Joué » (Sélection, Combinés, grosses cotes) : engine.togglePlayed → entrée d'historique played:true
+  (créée avec extra:true si hors top 100 ; extra exclu des stats de la sélection, jamais supprimée par saveHistory).
+  Filtre « Mes paris joués » ; Historique : bloc « Mes paris joués » (taux réel, combinés). Stocké par appareil.
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.
