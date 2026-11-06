@@ -166,3 +166,8 @@ tr.detail td { background: var(--panel); padding: 12px 16px 14px 50px; }
 .alerts .h { font-family: var(--cond); font-weight: 700; text-transform: uppercase; color: var(--accent); }
 .alerts .when { color: var(--muted); margin-right: 6px; }
 .alerts .b { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+
+/* ---- Tri ---- */
+.grid th[data-sort] { cursor: pointer; }
+.grid th[data-sort]:hover { color: var(--text); }
+.filters .sortsel { border-color: var(--accent); }

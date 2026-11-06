@@ -347,7 +347,8 @@ App.engine = (() => {
     const analyses = r.analyses.map(a => { const { bets, real, ...rest } = a; return rest; });
     const top = r.top.map(b => betOut(b, idx.get(b.a)));
     const others = [];
-    r.analyses.forEach(a => r.all.filter(b => b.a === a).slice(0, 12).forEach(b => others.push(betOut(b, idx.get(a)))));
+    // on garde 30 paris par match : de quoi refaire un classement par fourchette de cotes
+    r.analyses.forEach(a => r.all.filter(b => b.a === a).slice(0, 30).forEach(b => others.push(betOut(b, idx.get(a)))));
     const cmb = list => list.map(c => ({ p: c.p, conf: c.conf, id: c.id, legs: c.legs.map(l => r.top.indexOf(l)) }));
     return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples) },
       surprises: r.surprises, warnings: r.warnings, extras: r.extras };

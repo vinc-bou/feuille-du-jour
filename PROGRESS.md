@@ -79,6 +79,12 @@
   marché pour les matchs ESPN. Test 06/11 : 108 matchs analysés (44 avant), 6 sports.
 - PC sans clé : pas de données marché en local ; l'app du PC affiche la version en ligne si plus complète.
 
+## Tri et filtre de cotes (2026-11-06, V1.7)
+- Sélection : tri au choix (fiabilité, heure, cote ↑/↓, sport, compétition, confiance, type) par liste ou clic
+  sur les titres de colonnes ; fourchette de cotes (dès / jusqu'à) = nouveau top 100 dans la fourchette, pris
+  parmi tous les paris (30 par match gardés dans l'analyse enregistrée). Combinés : tri + fourchette.
+- Attention aux apostrophes dans les chaînes JS (utiliser ’) ; vérifier avec `node -e "new Function(...)"`.
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.

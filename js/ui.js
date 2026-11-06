@@ -4,7 +4,21 @@
   const $ = s => document.querySelector(s);
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
-  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '' }, open: null };
+  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '' }, open: null,
+    sort: 'rel', cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
+  // Choix de tri (Sélection) : libellé + fonction de comparaison
+  const SORTS = {
+    rel: ['Fiabilité (meilleurs d’abord)', (a, b) => a.vr - b.vr],
+    time: ['Heure du match', (a, b) => a.ts - b.ts || a.vr - b.vr],
+    oddAsc: ['Cote (plus petite d’abord)', (a, b) => b.p - a.p],
+    oddDesc: ['Cote (plus grande d’abord)', (a, b) => a.p - b.p],
+    sport: ['Sport', (a, b) => a.sport.localeCompare(b.sport) || a.vr - b.vr],
+    comp: ['Compétition', (a, b) => a.comp.localeCompare(b.comp) || a.ts - b.ts],
+    conf: ['Confiance', (a, b) => b.conf - a.conf || a.vr - b.vr],
+    group: ['Type de pari', (a, b) => a.group.localeCompare(b.group) || a.vr - b.vr],
+  };
+  const ODDS = [1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50, 1.60, 1.75, 2, 2.5, 3, 4, 5];
+  const oddOk = (p, f) => { const o = 1 / p; return (!f.oddMin || o >= +f.oddMin - 1e-9) && (!f.oddMax || o <= +f.oddMax + 1e-9); };
 
   const confCls = c => c >= 0.7 ? 'h' : c >= 0.4 ? 'm' : 'l';
   const confTxt = c => c >= 0.7 ? 'Haute' : c >= 0.4 ? 'Moyenne' : 'Faible';
@@ -91,9 +105,25 @@
   }
 
   /* ---------- Sélection (top 100) ---------- */
+  // Avec une fourchette de cotes : nouveau classement des 100 meilleurs paris DANS cette fourchette,
+  // pris parmi tous les paris analysés (2 par match au plus, 4 si la journée est creuse)
+  function rerank(f) {
+    const pool = [...new Set([...state.result.top, ...state.result.all])].filter(b => oddOk(b.p, f))
+      .sort((a, b) => (b.score ?? b.p) - (a.score ?? a.p));
+    const per = {}, out = [], seen = new Set();
+    [2, 4].forEach(lim => pool.forEach(b => {
+      if (out.length >= 100 || seen.has(b.id) || (per[b.ref.id] || 0) >= lim) return;
+      per[b.ref.id] = (per[b.ref.id] || 0) + 1; seen.add(b.id); out.push(b);
+    }));
+    out.sort((a, b) => (b.score ?? b.p) - (a.score ?? a.p));
+    out.forEach((b, i) => { b.vr = i + 1; });
+    return out;
+  }
   function filtered() {
     const f = state.filters;
-    return state.result.top.filter(b => {
+    const odds = f.oddMin || f.oddMax;
+    if (!odds) state.result.top.forEach(b => { b.vr = b.rank; });
+    return (odds ? rerank(f) : state.result.top).filter(b => {
       if (f.sport && b.sport !== f.sport) return false;
       if (f.comp && b.comp !== f.comp) return false;
       if (f.group && b.group !== f.group) return false;
@@ -106,7 +136,7 @@
         if (f.time === 'n' && !(h >= 23 || h < 6)) return false;
       }
       return true;
-    });
+    }).sort(SORTS[state.sort] ? SORTS[state.sort][1] : SORTS.rel[1]);
   }
 
   function realScore(a) {
@@ -159,15 +189,18 @@
       <select data-f="comp">${options(comps, f.comp, 'Toutes les compétitions')}</select>
       <select data-f="group">${options(groups, f.group, 'Tous les types de paris')}</select>
       <select data-f="time">${options([['a', 'Avant 15 h'], ['b', '15 h - 19 h'], ['c', '19 h - 23 h'], ['n', 'Nuit (23 h - 6 h)']], f.time, 'Toute la journée')}</select>
+      <select data-f="oddMin">${options(ODDS.map(o => [String(o), 'Cote dès ' + t.num(o, 2)]), f.oddMin, 'Cote : pas de minimum')}</select>
+      <select data-f="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), f.oddMax, 'Cote : pas de maximum')}</select>
       <input data-f="q" placeholder="Équipe, joueur…" value="${esc(f.q)}">
-      <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''} · ${r.analyses.length} matchs analysés</span>
+      <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>Trier : ${v[0]}</option>`).join('')}</select>
+      <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''}${f.oddMin || f.oddMax ? ' dans cette fourchette de cotes' : ''} · ${r.analyses.length} matchs analysés</span>
     </div>`;
     if (!rows.length) return html + `<div class="empty">Aucun pari ne correspond à ces filtres.</div>`;
-    html += `<table class="grid"><thead><tr><th style="text-align:right">#</th><th>Heure</th><th>Compétition</th><th>Match</th><th>Pari</th><th>Fiabilité</th><th>Cote mini</th><th>Confiance</th><th>À savoir</th>${r.replay ? '<th>Résultat</th>' : ''}</tr></thead><tbody>`;
+    html += `<table class="grid"><thead><tr><th style="text-align:right" data-sort="rel">#</th><th data-sort="time">Heure</th><th data-sort="comp">Compétition</th><th>Match</th><th data-sort="group">Pari</th><th data-sort="rel">Fiabilité</th><th data-sort="odd">Cote mini</th><th data-sort="conf">Confiance</th><th>À savoir</th>${r.replay ? '<th>Résultat</th>' : ''}</tr></thead><tbody>`;
     rows.forEach(b => {
       const open = state.open === b.id;
-      html += `<tr class="row ${b.rank <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
-        <td class="rk">${b.rank}</td>
+      html += `<tr class="row ${b.vr <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
+        <td class="rk">${b.vr}</td>
         <td class="time num">${d.hm(b.ts)}</td>
         <td class="comp"><span class="sp">${SP[b.sport]}</span>${esc(b.comp)}</td>
         <td class="mt">${teamsHtml(b.a)}</td>
@@ -187,14 +220,23 @@
 
   /* ---------- Combinés ---------- */
   function renderCombos() {
-    const { doubles, triples } = state.result.combos;
+    const cf = state.cfilters;
+    const csorts = { rel: ['Fiabilité', (a, b) => b.p - a.p], oddAsc: ['Cote (plus petite d’abord)', (a, b) => b.p - a.p],
+      oddDesc: ['Cote (plus grande d’abord)', (a, b) => a.p - b.p], time: ['Heure du premier match', (a, b) => Math.min(...a.legs.map(l => l.ts)) - Math.min(...b.legs.map(l => l.ts))] };
+    const prep = list => list.filter(c => oddOk(c.p, cf)).sort((csorts[cf.sort] || csorts.rel)[1]);
+    const doubles = prep(state.result.combos.doubles), triples = prep(state.result.combos.triples);
+    const bar = `<div class="filters">
+      <select data-cf="oddMin">${options(ODDS.map(o => [String(o), 'Cote dès ' + t.num(o, 2)]), cf.oddMin, 'Cote : pas de minimum')}</select>
+      <select data-cf="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), cf.oddMax, 'Cote : pas de maximum')}</select>
+      <select data-cf="sort" class="sortsel">${Object.entries(csorts).map(([k, v]) => `<option value="${k}" ${k === cf.sort ? 'selected' : ''}>Trier : ${v[0]}</option>`).join('')}</select>
+    </div>`;
     const block = (title, list) => `<h3>${title}</h3>` + (list.length ? list.map(c => `
       <div class="combo">
         <div class="legs">${c.legs.map(l => `<div><span class="bet">${esc(l.label)}</span> <span class="m">${esc(l.matchName)} · ${d.hm(l.ts)} · ${t.pct(l.p)}</span></div>`).join('')}</div>
         <div class="cf"><span class="rel"><span class="v num" style="font-family:var(--cond);font-weight:700;font-size:18px">${t.pct(c.p)}</span></span><div class="bar"><div style="width:${Math.round(c.p * 100)}%"></div></div></div>
         <div class="odd num">${t.odd(c.p)}<div style="font-size:11px;color:var(--muted);font-family:var(--body);font-weight:400">cote mini</div>${c.result ? `<div class="res-${c.result}" style="font-family:var(--body);font-size:13px">${RES[c.result]}</div>` : ''}</div>
-      </div>`).join('') : '<div class="empty">Pas assez de matchs différents pour composer des combinés.</div>');
-    return `<div class="combos">${block('Combinés à 2 paris', doubles)}${block('Combinés à 3 paris', triples)}
+      </div>`).join('') : '<div class="empty">Aucun combiné ne correspond (filtre de cote, ou pas assez de matchs différents).</div>');
+    return `<div class="combos">${bar}${block('Combinés à 2 paris', doubles)}${block('Combinés à 3 paris', triples)}
       <p class="warn" style="margin-top:14px">Chaque combiné ne mélange que des matchs différents, et jamais deux matchs du même championnat de foot (pour ne pas empiler les favoris d'une même journée).</p></div>`;
   }
 
@@ -332,6 +374,8 @@
   view.addEventListener('change', async e => {
     const el = e.target;
     if (el.dataset.f) { state.filters[el.dataset.f] = el.value; render(); return; }
+    if (el.dataset.cf) { state.cfilters[el.dataset.cf] = el.value; render(); return; }
+    if (el.dataset.sortSel) { state.sort = el.value; render(); return; }
     if (el.dataset.comp || el.id === 'maxPer' || el.id === 'minOdd') {
       const s = (await App.db.get('kv', 'settings')) || {};
       s.comps = s.comps || {};
@@ -352,6 +396,13 @@
     }, 250);
   });
   view.addEventListener('click', async e => {
+    // Clic sur un titre de colonne : tri (un 2e clic sur « Cote mini » inverse l'ordre)
+    const th = e.target.closest('th[data-sort]');
+    if (th) {
+      const k = th.dataset.sort;
+      state.sort = k === 'odd' ? (state.sort === 'oddAsc' ? 'oddDesc' : 'oddAsc') : k;
+      render(); return;
+    }
     const row = e.target.closest('tr.row');
     if (row) { state.open = state.open === row.dataset.id ? null : row.dataset.id; render(); return; }
     const mr = e.target.closest('.mrow');
