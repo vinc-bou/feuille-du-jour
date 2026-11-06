@@ -42,6 +42,8 @@ App.engine = (() => {
       return x.sp === 'tennis' ? { ...x, st: 'pre', players: x.players.map(p => ({ ...p, winner: false, sets: [] })) }
         : { ...x, st: 'pre', h: { ...x.h, g: 0, g1: 0, pts: 0, q: [] }, a: { ...x.a, g: 0, g1: 0, pts: 0, q: [] }, goals: [], cards: [], odds: null };
     };
+    // Données marché API-Football de la journée (collectées la nuit) : avis des bookmakers + matchs supplémentaires
+    const MK = replay ? null : await App.marche.load(W.key).catch(() => null);
     const pick = list => replay ? list.filter(x => x.st === 'post' && inWin(x, W)).map(asPre) : list.filter(x => x.st === 'pre' && inWin(x, W));
     const analyses = [];
     const surprises = [];
@@ -91,7 +93,8 @@ App.engine = (() => {
         const cfg = S.soccer.find(c => c.id === fx.lg);
         try {
           // En test, l'avis des bookmakers vient des cotes d'avant-match archivées (football-data)
-          const market = replay && X.ok && X.byMatch[fx.id] ? App.extras.implied(X.byMatch[fx.id]) : null;
+          const market = replay ? (X.ok && X.byMatch[fx.id] ? App.extras.implied(X.byMatch[fx.id]) : null)
+            : (MK ? App.marche.marketFor(MK, fx) : null);
           const a = App.soccer.analyzeMatch(fx, { ...ctxBase, lgCfg: cfg, market: market && market.p1 !== undefined ? market : null, noEspnOdds: replay });
           analyses.push(a);
           (byLg[fx.lg] = byLg[fx.lg] || []).push(a);
@@ -142,6 +145,14 @@ App.engine = (() => {
         .forEach(fx => { try { analyses.push(App.basket.analyzeMatch(fx, B, inj, c.name)); } catch (e) { console.warn('Analyse basket', fx, e); } });
     }
 
+    // Tous les autres matchs proposés par les bookmakers (autres championnats, autres sports) : analyse par le marché
+    if (MK) {
+      onStep('Autres matchs : avis du marché');
+      const extra = App.marche.build(MK, W, analyses);
+      analyses.push(...extra);
+      if (extra.length) extrasInfo = { ...(extrasInfo || {}), marche: extra.length };
+    }
+
     onStep('Classement des paris');
     const { top, all } = rank(analyses, S);
     const combos = buildCombos(top);
@@ -184,7 +195,7 @@ App.engine = (() => {
         all.push({
           ...b, notes, score, a,
           id: `${a.sport}|${a.match.id}|${JSON.stringify(b.settle)}`,
-          ref: { sp: a.sport, lg: a.match.lg, id: a.match.id, ts: a.match.ts },
+          ref: { sp: a.sport, lg: a.match.lg, id: a.match.id, ts: a.match.ts, src: a.match.src, apiSport: a.match.apiSport, apiId: a.match.apiId },
           matchName: matchName(a), comp: a.comp, sport: a.sport, ts: a.match.ts,
         });
       });
@@ -290,6 +301,7 @@ App.engine = (() => {
   }
 
   async function settleBet(b, cache) {
+    if (b.ref.src === 'api') { const r = await App.marche.settle(b); return r === undefined ? null : r; }
     if (cache.has(b.ref.id)) return cache.get(b.ref.id)(b);
     const x = await findMatch(b.ref);
     const fn = bb => {
@@ -356,13 +368,17 @@ App.engine = (() => {
   }
   // Dernière analyse : serveur local (PC) ou fichier publié (version en ligne, GitHub Pages)
   async function loadRemote() {
-    for (const url of ['/api/last-analysis', 'en-ligne/dernier.json']) {
+    const found = [];
+    for (const url of ['/api/last-analysis', 'en-ligne/dernier.json', 'https://vinc-bou.github.io/feuille-du-jour/en-ligne/dernier.json']) {
       try {
         const res = await fetch(url, { cache: 'no-store' });
-        if (res.ok && (res.headers.get('content-type') || '').includes('json')) return deserialize(await res.json());
+        if (res.ok && (res.headers.get('content-type') || '').includes('json')) found.push(await res.json());
       } catch (e) { /* on essaie la source suivante */ }
     }
-    return null;
+    if (!found.length) return null;
+    // la plus récente journée, puis la plus complète (la version en ligne a les données marché)
+    found.sort((a, b) => (b.W.key - a.W.key) || (b.analyses.length - a.analyses.length));
+    return deserialize(found[0]);
   }
 
   return { run, settleAll, settings, saveHistory, saveRemote, loadRemote };

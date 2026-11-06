@@ -52,6 +52,12 @@ jobs:
           key: donnees-${{ github.run_id }}
           restore-keys: donnees-
 
+      - name: Collecte API-Football (tous les matchs proposés par les bookmakers)
+        if: steps.heure.outputs.go == '1'
+        env:
+          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
+        run: python collecte_api.py
+
       - name: Analyse (navigateur invisible)
         if: steps.heure.outputs.go == '1'
         env:

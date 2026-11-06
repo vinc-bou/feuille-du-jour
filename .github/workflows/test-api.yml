@@ -19,10 +19,4 @@ jobs:
       - name: Collecte
         env:
           APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
-        run: python collecte_api.py
-      - name: Résultat (probabilités dérivées, conservé 1 jour, pour la mise au point)
-        uses: actions/upload-artifact@v4
-        with:
-          name: collecte
-          path: cache/api/
-          retention-days: 1
+        run: python outils/test_api.py

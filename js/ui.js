@@ -3,7 +3,7 @@
   const { t, d } = App;
   const $ = s => document.querySelector(s);
   const view = $('#view');
-  const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket' };
+  const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
   const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '' }, open: null };
 
   const confCls = c => c >= 0.7 ? 'h' : c >= 0.4 ? 'm' : 'l';
@@ -83,7 +83,7 @@
     const rate = l => l.length ? l.filter(b => b.result === 'won').length / l.length : 0;
     const exp = l => l.length ? l.reduce((a, b) => a + b.p, 0) / l.length : 0;
     const part = (label, l) => `<div class="kpi"><div class="l">${label}</div><div class="v num">${l.length ? `${l.filter(b => b.result === 'won').length}/${l.length}` : '-'}</div><div class="l">${l.length ? `${t.pct(rate(l))} réel · ${t.pct(exp(l))} annoncé` : ''}</div></div>`;
-    const bySport = ['soccer', 'tennis', 'basket'].map(sp => part(SP[sp], done.filter(b => b.sport === sp))).join('');
+    const bySport = Object.keys(SP).filter(sp => done.some(b => b.sport === sp)).map(sp => part(SP[sp], done.filter(b => b.sport === sp))).join('');
     const cs = [...r.combos.doubles, ...r.combos.triples].filter(c => c.result !== 'void');
     return `<p class="warn" style="color:var(--text)"><strong>Test à l'aveugle.</strong> Sélection calculée comme si on était le ${esc(d.dayLabel(r.W.start))} à 6 h, avec uniquement les matchs joués avant. Les résultats ne servent qu'à noter.</p>
       <div class="kpis">${part('Sélection complète', done)}${part('Top 10', done.filter(b => b.rank <= 10))}${part('Top 30', done.filter(b => b.rank <= 30))}${bySport}
@@ -155,7 +155,7 @@
     if (r.warnings.length) html += `<p class="warn">${r.warnings.map(esc).join(' · ')}</p>`;
     if (r.extras && !r.extras.ok) html += `<p class="warn">Données ouvertes inactives (xG, arbitres, transferts) : ouvrez l'app avec Lancer.bat pour en profiter.</p>`;
     html += `<div class="filters">
-      <select data-f="sport">${options([['soccer', 'Football'], ['tennis', 'Tennis'], ['basket', 'Basket']], f.sport, 'Tous les sports')}</select>
+      <select data-f="sport">${options(Object.entries(SP).filter(([k]) => r.top.some(b => b.sport === k)).map(([k, v]) => [k, v]), f.sport, 'Tous les sports')}</select>
       <select data-f="comp">${options(comps, f.comp, 'Toutes les compétitions')}</select>
       <select data-f="group">${options(groups, f.group, 'Tous les types de paris')}</select>
       <select data-f="time">${options([['a', 'Avant 15 h'], ['b', '15 h - 19 h'], ['c', '19 h - 23 h'], ['n', 'Nuit (23 h - 6 h)']], f.time, 'Toute la journée')}</select>
@@ -209,7 +209,7 @@
       list.forEach(a => {
         const id = 'm' + a.match.id;
         let probs;
-        if (a.sport === 'soccer') probs = `1 <b>${t.pct(a.p1)}</b> · N <b>${t.pct(a.pX)}</b> · 2 <b>${t.pct(a.p2)}</b>`;
+        if (a.sport === 'soccer' && a.p1 !== undefined && a.pX !== undefined) probs = `1 <b>${t.pct(a.p1)}</b> · N <b>${t.pct(a.pX)}</b> · 2 <b>${t.pct(a.p2)}</b>`;
         else probs = `Favori : <b>${esc(a.fav.name)}</b> ${t.pct(a.fav.pWin)}`;
         html += `<div class="mrow" data-m="${id}"><div class="num" style="color:var(--muted)">${d.hm(a.match.ts)}</div><div>${teamsHtml(a)}</div><div class="probs">${probs}</div><div class="notes">${a.tags.map(x => `<span class="${x === 'Match piège' ? 'trap' : ''}">${esc(x)}</span>`).join('')}</div></div>`;
         if (state.open === id) html += `<div class="mdetail detail">${detailHtml(a, null)}</div>`;

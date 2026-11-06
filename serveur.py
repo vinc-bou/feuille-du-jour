@@ -179,6 +179,17 @@ class Handler(SimpleHTTPRequestHandler):
                         return self.send_body(r.read(), 'application/json; charset=utf-8')
                 except urllib.error.HTTPError as e:
                     return self.send_body(b'{}', 'application/json', e.code)
+            if u.path == '/api/marche':
+                day = q.get('day', [''])[0]
+                p = os.path.join(CACHE, 'api', f'{day}.json')
+                if not re.fullmatch(r'\d{8}', day) or not os.path.exists(p):
+                    return self.send_body(b'aucune', 'text/plain', 404)
+                return self.send_body(open(p, 'rb').read(), 'application/json; charset=utf-8')
+            if u.path == '/api/scores-api':
+                p = os.path.join(RESULTS, 'scores-api.json')
+                if not os.path.exists(p):
+                    return self.send_body(b'aucun', 'text/plain', 404)
+                return self.send_body(open(p, 'rb').read(), 'application/json; charset=utf-8')
             if u.path == '/api/last-analysis':
                 p = os.path.join(RESULTS, 'dernier.json')
                 if not os.path.exists(p):
