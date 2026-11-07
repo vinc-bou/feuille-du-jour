@@ -855,6 +855,17 @@
   })();
   // Paris cochés « je joue » (gardés sur cet appareil, dans l'historique)
   App.db.all('history').then(list => { list.forEach(([k, v]) => { if (v.played) state.played.add(v.type === 'B' ? v.bet.id : k.split('|').slice(2).join('|')); }); if (state.played.size && state.result) render(); });
+  // Nouvelle version publiée ? On recharge tout seul (au retour sur l'app et toutes les 10 minutes)
+  const myVer = (document.querySelector('script[src*="ui.js"]').getAttribute('src').match(/v=(\d+)/) || [])[1];
+  async function checkVersion() {
+    try {
+      const html = await (await fetch(`./?nv=${Date.now()}`, { cache: 'no-store' })).text();
+      const v = (html.match(/ui\.js\?v=(\d+)/) || [])[1];
+      if (v && myVer && v !== myVer && !state.running) location.reload();
+    } catch (e) { /* hors ligne */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+  setInterval(checkVersion, 600000);
   pollAlerts();
   setInterval(pollAlerts, 120000);
   setInterval(pollLive, 60000);
