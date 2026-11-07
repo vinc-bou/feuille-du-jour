@@ -307,9 +307,11 @@ App.engine = (() => {
 
   /* ---------- Portefeuille de l'app : elle choisit ses propres paris chaque jour ---------- */
   // 1) « valeur » : foot, le calcul croit nettement plus au pari que les bookmakers (cote estimée = celle du marché, marge 5 %)
-  // 2) « fiable » : les paris les plus sûrs à partir de 1,30 (cote estimée = cote mini − 5 %)
+  // 2) « fiable » : les paris les plus sûrs à partir de 1,30 (cote estimée = cote mini × 0,91 : sur ces paris
+  //    Winamax paie environ 1,18 quand la cote mini est 1,30, constaté le 7/11)
   // Jamais : analyse « marché » seule, match piège, confiance faible, match déjà commencé.
   const APP = { value: 3, reliable: 3, minOdd: 1.30, maxOdd: 2.30 };
+  const SAFE_F = 0.91;
   function marketP(b) {
     const m = b.a && b.a.market, s = b.settle;
     if (!m || b.sport !== 'soccer' || m.p1 === undefined) return null;
@@ -326,7 +328,7 @@ App.engine = (() => {
       .forEach(x => { if (out.length < APP.value && !used.has(x.b.ref.id)) { used.add(x.b.ref.id); out.push({ id: x.b.id, odd: +x.odd.toFixed(2), kind: 'valeur', pm: x.pm, b: x.b }); } });
     const nV = out.length;
     all.filter(b => ok(b) && 1 / b.p >= APP.minOdd && 1 / b.p <= APP.maxOdd).sort((x, y) => y.score - x.score)
-      .forEach(b => { if (out.length < nV + APP.reliable && !used.has(b.ref.id)) { used.add(b.ref.id); out.push({ id: b.id, odd: +Math.max(1.01, 0.95 / b.p).toFixed(2), kind: 'fiable', b }); } });
+      .forEach(b => { if (out.length < nV + APP.reliable && !used.has(b.ref.id)) { used.add(b.ref.id); out.push({ id: b.id, odd: +Math.max(1.01, SAFE_F / b.p).toFixed(2), kind: 'fiable', b }); } });
     return out;
   }
 
@@ -509,5 +511,5 @@ App.engine = (() => {
     return v.played;
   }
 
-  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed, appPicks };
+  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed, appPicks, SAFE_F };
 })();

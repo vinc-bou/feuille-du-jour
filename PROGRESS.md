@@ -119,7 +119,7 @@
   sport, fiabilité, type, jour par jour), calendrier mensuel cliquable, « Mes paris joués » par période.
 - Portefeuille de l'app (V1.13) : engine.appPicks à chaque analyse (r.app, sérialisé) → jusqu'à 3 « bonnes cotes »
   (foot 1N2/DC, p calcul ≥ p marché + 3 pts, cote estimée 1/(p marché × 1,05), 1,4-3,5) + 3 « sûrs » (1,30-2,30,
-  cote mini × 0,95) ; jamais marché seul, piège, conf < 0,6, match commencé. Historique : v.app {odd, kind, pm}.
+  cote mini × 0,91 : Winamax ≈ 1,18 pour 1,30) ; jamais marché seul, piège, conf < 0,6, match commencé. Historique : v.app {odd, kind, pm}.
   100 € au départ, mise 3 % du solde du matin. Analyse sans r.app (ancienne) : choix fait au chargement (hist2|).
 
 ## Sources étudiées et écartées (2026-11-06)

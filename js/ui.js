@@ -486,7 +486,9 @@
       const start = bank;
       let g = 0;
       l.sort((a, b) => a.bet.ts - b.bet.ts).forEach(v => {
-        const stake = Math.max(1, Math.round(start * APP_FRAC * 100) / 100), odd = v.app.odd;
+        const stake = Math.max(1, Math.round(start * APP_FRAC * 100) / 100);
+        // paris « sûrs » : cote estimée corrigée (Winamax paie moins que prévu au départ)
+        const odd = v.app.kind === 'fiable' ? Math.max(1.01, Math.round(App.engine.SAFE_F / v.bet.p * 100) / 100) : v.app.odd;
         const gain = v.result === 'won' ? stake * (odd - 1) : v.result === 'lost' ? -stake : 0;
         if (v.result === 'won' || v.result === 'lost') staked += stake;
         if (v.result === null) inPlay += stake;
@@ -529,7 +531,7 @@
       html += `<div class="sect"><h3>${day === today ? 'Aujourd’hui · ' : ''}${esc(longDate(keyDate(day)))} <span style="color:var(--muted);font-size:14px">${dn.length ? `${dn.filter(x => x.v.result === 'won').length}/${dn.length} gagnés · ` : ''}${dn.length ? `<span class="${g >= 0 ? 'res-won' : 'res-lost'}">${g >= 0 ? '+' : ''}${euro(g)}</span>` : 'en attente'}</span></h3>
         <table class="mini"><tr style="color:var(--muted)"><td>Heure</td><td>Pari</td><td>Type</td><td class="n">Cote</td><td class="n">Mise</td><td class="n">Résultat</td></tr>${l.map(appBetRow).join('')}</table></div>`;
     });
-    return html + `<p class="warn">L’app ne voit pas la cote exacte de Winamax : elle prend la cote du marché moins 5 % pour les « bonnes cotes », la cote mini moins 5 % pour les paris « sûrs ». Cliquez sur un pari pour voir son analyse.</p>`;
+    return html + `<p class="warn">L’app ne voit pas la cote exacte de Winamax : elle prend la cote du marché moins 5 % pour les « bonnes cotes », et environ 9 % de moins que la cote mini pour les paris « sûrs » (1,18 pour une cote mini de 1,30), comme constaté sur Winamax. Cliquez sur un pari pour voir son analyse.</p>`;
   }
 
   async function renderHistory() {
