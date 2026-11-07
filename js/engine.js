@@ -156,6 +156,7 @@ App.engine = (() => {
     onStep('Classement des paris');
     const { top, all } = rank(analyses, S);
     const combos = buildCombos(top, all);
+    let app = [];
     if (replay) {
       // Notation de la sélection avec les vrais résultats
       const mod = sp => sp === 'soccer' ? App.soccer : sp === 'tennis' ? App.tennis : App.basket;
@@ -166,9 +167,9 @@ App.engine = (() => {
         c.result = rs.includes('lost') ? 'lost' : rs.every(r => r === 'void') ? 'void' : 'won';
       });
       analyses.forEach(a => { a.real = orig.get(a.match.id); });
-    } else await saveHistory(W.key, top, combos, Date.now());
+    } else { app = appPicks(all); await saveHistory(W.key, top, combos, Date.now(), app); }
     analyses.sort((a, b) => a.match.ts - b.match.ts);
-    return { W, analyses, top, all, combos, surprises, warnings, extras: extrasInfo, replay, ranAt: Date.now() };
+    return { W, analyses, top, all, combos, app, surprises, warnings, extras: extrasInfo, replay, ranAt: Date.now() };
   }
 
   /* ---------- Classement ---------- */
@@ -304,17 +305,44 @@ App.engine = (() => {
     return { doubles: d2, triples: d3, hard: hardCombos(all || top) };
   }
 
+  /* ---------- Portefeuille de l'app : elle choisit ses propres paris chaque jour ---------- */
+  // 1) « valeur » : foot, le calcul croit nettement plus au pari que les bookmakers (cote estimée = celle du marché, marge 5 %)
+  // 2) « fiable » : les paris les plus sûrs à partir de 1,30 (cote estimée = cote mini − 5 %)
+  // Jamais : analyse « marché » seule, match piège, confiance faible, match déjà commencé.
+  const APP = { value: 3, reliable: 3, minOdd: 1.30, maxOdd: 2.30 };
+  function marketP(b) {
+    const m = b.a && b.a.market, s = b.settle;
+    if (!m || b.sport !== 'soccer' || m.p1 === undefined) return null;
+    if (s.k === '1x2') return s.sel === '1' ? m.p1 : s.sel === '2' ? m.p2 : m.pX;
+    if (s.k === 'dc') return s.sel === '1X' ? m.p1 + m.pX : s.sel === 'X2' ? m.pX + m.p2 : m.p1 + m.p2;
+    return null;
+  }
+  function appPicks(all, now = Date.now()) {
+    const ok = b => b.ts > now + 5 * 60000 && b.conf >= 0.6 && !(b.notes || []).includes('Match piège') && b.a && b.a.analysisType !== 'marche';
+    const used = new Set(), out = [];
+    all.filter(ok).map(b => ({ b, pm: marketP(b) })).filter(x => x.pm && x.b.p - x.pm >= 0.03)
+      .map(x => ({ ...x, odd: 1 / (x.pm * 1.05) })).filter(x => x.odd >= 1.4 && x.odd <= 3.5)
+      .sort((x, y) => y.b.p * y.odd - x.b.p * x.odd)
+      .forEach(x => { if (out.length < APP.value && !used.has(x.b.ref.id)) { used.add(x.b.ref.id); out.push({ id: x.b.id, odd: +x.odd.toFixed(2), kind: 'valeur', pm: x.pm, b: x.b }); } });
+    const nV = out.length;
+    all.filter(b => ok(b) && 1 / b.p >= APP.minOdd && 1 / b.p <= APP.maxOdd).sort((x, y) => y.score - x.score)
+      .forEach(b => { if (out.length < nV + APP.reliable && !used.has(b.ref.id)) { used.add(b.ref.id); out.push({ id: b.id, odd: +Math.max(1.01, 0.95 / b.p).toFixed(2), kind: 'fiable', b }); } });
+    return out;
+  }
+
   /* ---------- Historique ---------- */
   const slim = b => ({ id: b.id, label: b.label, group: b.group, p: b.p, conf: b.conf, settle: b.settle, ref: b.ref,
     matchName: b.matchName, comp: b.comp, sport: b.sport, ts: b.ts, rank: b.rank, notes: b.notes,
     why: b.why || (b.a ? App.why(b) : ''), factors: b.factors || (b.a ? (b.a.factors || []).slice(0, 10) : []) });
 
-  async function saveHistory(dayKey, top, combos, at) {
+  async function saveHistory(dayKey, top, combos, at, app) {
     const H = combos.hard || [];
+    app = app || [];
     const now = Date.now();
     const existing = (await App.db.all('history')).filter(([k]) => k.startsWith(dayKey + '|'));
     const keep = new Set();
     top.forEach(b => keep.add(`${dayKey}|B|${b.id}`));
+    app.forEach(x => keep.add(`${dayKey}|B|${x.id}`));
     [...combos.doubles, ...combos.triples, ...H].forEach(c => keep.add(`${dayKey}|C|${c.id}`));
     // On retire les anciens pronostics de matchs pas encore commencés qui ne sont plus dans la sélection
     for (const [k, v] of existing) {
@@ -327,6 +355,16 @@ App.engine = (() => {
       const prev = exMap.get(k);
       if (prev && b.ts <= now) continue; // match commencé : on garde le pronostic d'origine
       await App.db.put('history', k, { type: 'B', day: dayKey, bet: slim(b), result: prev ? prev.result : null, savedAt: now, at: at || now, played: !!(prev && prev.played) });
+    }
+    // paris de l'app (le choix d'un match commencé n'est jamais modifié)
+    const topIds = new Set(top.map(b => b.id));
+    for (const x of app) {
+      const k = `${dayKey}|B|${x.id}`;
+      const prev = await App.db.get('history', k);
+      if (prev && prev.app && x.b.ts <= now) continue;
+      const v = prev || { type: 'B', day: dayKey, bet: slim(x.b), result: null, savedAt: now, at: at || now, extra: !topIds.has(x.id) };
+      v.app = { odd: x.odd, kind: x.kind, pm: x.pm, at: at || now };
+      await App.db.put('history', k, v);
     }
     for (const c of [...combos.doubles, ...combos.triples, ...H]) {
       const k = `${dayKey}|C|${c.id}`;
@@ -402,7 +440,8 @@ App.engine = (() => {
     // on garde 30 paris par match : de quoi refaire un classement par fourchette de cotes
     r.analyses.forEach(a => r.all.filter(b => b.a === a).slice(0, 30).forEach(b => others.push(betOut(b, idx.get(a)))));
     const cmb = list => list.map(c => ({ p: c.p, conf: c.conf, id: c.id, legs: c.legs.map(l => r.top.indexOf(l)) }));
-    return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples),
+    const app = (r.app || []).map(({ b, ...x }) => ({ ...x, bet: betOut(b, idx.get(b.a)) }));
+    return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, app, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples),
       hard: (r.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => betOut(l, idx.get(l.a))) })) },
       surprises: r.surprises, warnings: r.warnings, extras: r.extras };
   }
@@ -416,8 +455,9 @@ App.engine = (() => {
     top.forEach((b, i) => { b.rank = i + 1; });
     const all = j.others.map(b => ({ ...b, a: analyses0[b.ai] })).filter(b => !bad.has(b.a));
     const okC = c => c.legs.every(l => l && !bad.has(l.a));
+    const app = j.app ? j.app.map(({ bet, ...x }) => ({ ...x, b: { ...bet, a: analyses0[bet.ai] } })).filter(x => !bad.has(x.b.a)) : null;
     const cmb = list => list.map(c => ({ ...c, legs: c.legs.map(i => topAll[i]) })).filter(okC);
-    return { ...j, analyses, top, all, combos: { doubles: cmb(j.combos.doubles), triples: cmb(j.combos.triples),
+    return { ...j, app, analyses, top, all, combos: { doubles: cmb(j.combos.doubles), triples: cmb(j.combos.triples),
       hard: (j.combos.hard || []).map(c => ({ ...c, legs: c.legs.map(l => ({ ...l, a: analyses0[l.ai] })) })).filter(okC) } };
   }
   async function saveRemote(r) {
@@ -469,5 +509,5 @@ App.engine = (() => {
     return v.played;
   }
 
-  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed };
+  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed, appPicks };
 })();

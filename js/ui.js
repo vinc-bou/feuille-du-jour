@@ -67,11 +67,12 @@
         const ids = new Set(state.result.top.map(b => b.id)), seen = new Set();
         state.result.started = [...(prev.started || []), ...prev.top].filter(b => b.ts <= Date.now() && !ids.has(b.id) && !seen.has(b.id) && seen.add(b.id));
       }
-      pollLive();
       state.open = null;
       // Sélection transmise au serveur local : c'est elle que la surveillance des compositions suivra
       if (!state.result.replay) App.engine.saveRemote(state.result);
       setStatus('');
+      App.data.setProgress(() => {}); // le suivi en direct ne doit pas réafficher la barre de progression
+      pollLive();
     } catch (e) {
       console.error(e);
       setStatus('Erreur pendant l\'analyse : ' + e.message);
@@ -123,10 +124,11 @@
   /* ---------- En direct : pronostics dont le match a commencé ---------- */
   const scoreOf = x => !x ? '' : x.sp === 'tennis' ? x.players[0].sets.map((v, i) => `${v}-${x.players[1].sets[i]}`).join(' ')
     : x.sp === 'basket' ? `${x.h.pts}-${x.a.pts}` : `${x.h.g}-${x.a.g}`;
+  const appIds = () => new Set(((state.result && state.result.app) || []).map(x => x.id));
   function liveBets(r) {
     if (!r || r.replay) return [];
     const now = Date.now(), seen = new Set();
-    return [...r.top, ...(r.started || []), ...r.all.filter(b => state.played.has(b.id))].filter(b => b.ts <= now && b.ts > now - 6 * 3600000 && !seen.has(b.id) && seen.add(b.id));
+    return [...r.top, ...(r.started || []), ...(r.app || []).map(x => x.b), ...r.all.filter(b => state.played.has(b.id))].filter(b => b.ts <= now && b.ts > now - 6 * 3600000 && !seen.has(b.id) && seen.add(b.id));
   }
   let liveBusy = false;
   async function pollLive() {
@@ -163,7 +165,7 @@
     return bar + `<div class="sect live"><h3>En direct <span style="color:var(--muted);font-size:14px">${list.length} pronostic${list.length > 1 ? 's' : ''} dont le match a commencé · mis à jour chaque minute</span></h3>
       <table class="mini">${list.map(b => { const l = state.live[b.id] || {}; return `<tr><td class="num" style="width:60px;color:var(--muted)">${timeHtml(b)}</td><td>${teamsHtml(b.a)}</td>
         <td class="num" style="font-weight:600">${esc(l.score || '')} <span style="color:var(--muted);font-weight:400">${esc(l.st === 'in' ? l.detail : '')}</span></td>
-        <td>${state.played.has(b.id) ? '<span class="mine">Joué</span> ' : ''}${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n" style="width:150px">${status(b)}</td></tr>`; }).join('')}</table></div>`;
+        <td>${state.played.has(b.id) ? '<span class="mine">Joué</span> ' : ''}${appIds().has(b.id) ? '<span class="mine appb">App</span> ' : ''}${esc(b.label)}</td><td class="n">${t.pct(b.p)}</td><td class="n" style="width:150px">${status(b)}</td></tr>`; }).join('')}</table></div>`;
   }
 
   /* ---------- Sélection (top 100) ---------- */
@@ -268,6 +270,7 @@
     if (!rows.length) return html + `<div class="empty">Aucun pari ne correspond à ces filtres.</div>`;
     const th = (k, txt, st) => `<th data-sort="${k}" class="${state.sort === k ? 'sorted' : ''}" ${st ? `style="${st}"` : ''} title="Trier (cliquer à nouveau pour inverser)">${txt}${state.sort === k ? (state.rev ? ' ▲' : ' ▼') : ''}</th>`;
     html += `<table class="grid"><thead><tr><th class="pl" title="Cochez les paris que vous jouez">Joué</th><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
+    const aIds = appIds();
     rows.forEach(b => {
       const open = state.open === b.id;
       html += `<tr class="row ${b.vr <= 10 ? 't10' : ''}" data-id="${esc(b.id)}">
@@ -280,7 +283,7 @@
         <td class="rel"><span class="v num">${t.pct(b.p)}</span><div class="bar"><div style="width:${Math.round(b.p * 100)}%"></div></div></td>
         <td class="odd num">${t.odd(b.p)}</td>
         <td class="conf ${confCls(b.conf)}"><i></i>${confTxt(b.conf)}</td>
-        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
+        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${aIds.has(b.id) ? '<span class="appn">Joué par l’app</span>' : ''}${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
         ${r.replay ? `<td class="res res-${b.result}">${RES[b.result] || ''}<div style="color:var(--dim);font-size:12px">${esc(realScore(b.a))}</div></td>` : ''}
       </tr>`;
       if (open) html += `<tr class="detail"><td colspan="11">${detailHtml(b.a, b.id)}</td></tr>`;
@@ -370,7 +373,7 @@
   const expOf = l => l.length ? l.reduce((a, v) => a + v.bet.p, 0) / l.length : 0;
   const groupBy = (l, f) => { const g = {}; l.forEach(v => { const k = f(v); (g[k] = g[k] || []).push(v); }); return g; };
   const euro = v => `${v < 0 ? '−' : ''}${t.num(Math.abs(v), 2)} €`;
-  const PERIODS = [['yday', 'Hier'], ['week', 'Cette semaine'], ['month', 'Ce mois'], ['year', 'Cette année'], ['all', 'Depuis le début'], ['cal', 'Calendrier'], ['wallet', 'Portefeuille']];
+  const PERIODS = [['yday', 'Hier'], ['week', 'Cette semaine'], ['month', 'Ce mois'], ['year', 'Cette année'], ['all', 'Depuis le début'], ['cal', 'Calendrier'], ['wallet', 'Portefeuille de l’app']];
 
   function periodRange(per) {
     const today = d.window(0).key, t0 = keyDate(today);
@@ -458,26 +461,6 @@
   }
 
   /* ---------- Portefeuille simulé ---------- */
-  const WALLET = { capital: 100, mode: 'fixed', stake: 2, scope: 'top20', margin: 5 };
-  function simulate(bets, W) {
-    const pick = W.scope === 'mine' ? bets.filter(v => v.played) : bets.filter(v => !v.extra && v.bet.rank <= +W.scope.slice(3));
-    const list = pick.filter(v => v.result === 'won' || v.result === 'lost' || v.result === 'void').sort((a, b) => a.bet.ts - b.bet.ts);
-    let bank = +W.capital, staked = 0;
-    const curve = [[list.length ? list[0].bet.ts : Date.now(), bank]], perDay = {};
-    for (const v of list) {
-      if (bank <= 0.01) break;
-      const stake = Math.min(bank, W.mode === 'pct' ? bank * W.stake / 100 : +W.stake);
-      const odd = Math.max(1.01, (1 / v.bet.p) * (1 - W.margin / 100));
-      const gain = v.result === 'won' ? stake * (odd - 1) : v.result === 'lost' ? -stake : 0;
-      if (v.result !== 'void') staked += stake;
-      bank += gain;
-      (perDay[v.day] = perDay[v.day] || { n: 0, w: 0, g: 0 }).n += v.result === 'void' ? 0 : 1;
-      if (v.result === 'won') perDay[v.day].w++;
-      perDay[v.day].g += gain;
-      curve.push([v.bet.ts, bank]);
-    }
-    return { bank, staked, curve, perDay, n: list.filter(v => v.result !== 'void').length, pending: pick.filter(v => v.result === null).length };
-  }
   function curveSvg(curve, start) {
     if (curve.length < 2) return '';
     const W = 640, H = 180, pad = 34;
@@ -491,30 +474,62 @@
       <text x="${pad}" y="${H - 6}" class="cv">${esc(longDate(curve[0][0]))}</text><text x="${W - 6}" y="${H - 6}" text-anchor="end" class="cv">${esc(longDate(curve[curve.length - 1][0]))}</text>
     </svg>`;
   }
-  async function walletHtml(bets) {
-    const W = { ...WALLET, ...((await App.db.get('kv', 'wallet')) || {}) };
-    const s = simulate(bets, W), profit = s.bank - W.capital;
-    const sel = (k, opts) => `<select data-w="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(W[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-    const days = Object.entries(s.perDay).sort((a, b) => b[0].localeCompare(a[0]));
-    const best = days.length ? days.reduce((a, b) => b[1].g > a[1].g ? b : a) : null, worst = days.length ? days.reduce((a, b) => b[1].g < a[1].g ? b : a) : null;
-    return `<div class="sect"><h3>Portefeuille simulé</h3>
-      <p style="max-width:900px;line-height:1.55">L’app joue « pour de faux » avec un capital de départ, depuis le premier jour de l’historique : chaque pari de la sélection choisie est misé, puis gagné ou perdu selon le vrai résultat. De quoi voir ce que la méthode aurait rapporté, sans risquer un euro.</p>
-      <div class="filters wallet">
-        <label>Capital de départ <input type="number" min="1" step="1" data-w="capital" value="${W.capital}"> €</label>
-        <label>Mise ${sel('mode', [['fixed', 'fixe'], ['pct', 'en % du solde']])} <input type="number" min="0.1" step="0.1" data-w="stake" value="${W.stake}"> ${W.mode === 'pct' ? '%' : '€'}</label>
-        <label>Paris joués ${sel('scope', [['top10', 'Top 10 du jour'], ['top20', 'Top 20 du jour'], ['top50', 'Top 50 du jour'], ['top100', 'Les 100 du jour'], ['mine', 'Mes paris cochés « Joué »']])}</label>
-        <label>Cote utilisée ${sel('margin', [[0, 'cote mini'], [3, 'cote mini − 3 %'], [5, 'cote mini − 5 %'], [8, 'cote mini − 8 %']])}</label>
-      </div>
+  /* ---------- Portefeuille de l'app : elle choisit et mise toute seule ---------- */
+  const APP_START = 100, APP_FRAC = 0.03; // 100 € au départ, 3 % du solde du matin par pari
+  function appWallet(allBets) {
+    const list = allBets.filter(v => v.app);
+    const days = Object.entries(groupBy(list, v => v.day)).sort((a, b) => a[0].localeCompare(b[0]));
+    let bank = APP_START, staked = 0, inPlay = 0;
+    const curve = [], rows = [];
+    days.forEach(([day, l], i) => {
+      if (!i) curve.push([keyDate(day).getTime() - 1, bank]);
+      const start = bank;
+      let g = 0;
+      l.sort((a, b) => a.bet.ts - b.bet.ts).forEach(v => {
+        const stake = Math.max(1, Math.round(start * APP_FRAC * 100) / 100), odd = v.app.odd;
+        const gain = v.result === 'won' ? stake * (odd - 1) : v.result === 'lost' ? -stake : 0;
+        if (v.result === 'won' || v.result === 'lost') staked += stake;
+        if (v.result === null) inPlay += stake;
+        g += gain;
+        rows.push({ v, stake, odd, gain, day });
+      });
+      bank += g;
+      curve.push([keyDate(day).getTime() + 18 * 3600000, bank]);
+    });
+    return { bank, staked, inPlay, curve, rows, days: days.map(d0 => d0[0]) };
+  }
+  function appBetRow(x) {
+    const v = x.v, b = v.bet;
+    const st = v.result === 'won' ? `<span class="res-won">+${euro(x.gain)}</span>` : v.result === 'lost' ? `<span class="res-lost">${euro(x.gain)}</span>`
+      : v.result === 'void' ? '<span style="color:var(--muted)">annulé, remboursé</span>' : b.ts <= Date.now() ? '<span style="color:var(--accent)">en cours</span>' : '<span style="color:var(--muted)">à venir</span>';
+    return `<tr class="hrow" data-h="${esc(v._k)}"><td class="num" style="width:54px;color:var(--muted)">${b.sport === 'tennis' ? '≈ ' : ''}${d.hm(b.ts)}</td>
+      <td>${esc(b.label)}<div style="color:var(--muted);font-size:12.5px">${esc(b.matchName)} · ${esc(SP[b.sport] || '')} · ${esc(b.comp)}</div></td>
+      <td><span class="akind ${v.app.kind}">${v.app.kind === 'valeur' ? 'Bonne cote' : 'Sûr'}</span></td>
+      <td class="n">${t.num(x.odd, 2)}</td><td class="n">${euro(x.stake)}</td><td class="n" style="width:130px">${st}</td></tr>`
+      + (state.hopen === v._k ? `<tr class="hdetail"><td colspan="6">${histDetail(v)}${v.app.kind === 'valeur' && v.app.pm ? `<p class="why"><b>Pourquoi l’app le joue</b>Les bookmakers lui donnent ${t.pct(v.app.pm)} de chances, le calcul de l’app ${t.pct(b.p)} : la cote proposée paie plus que le risque réel.</p>` : ''}</td></tr>` : '');
+  }
+  function walletHtml(allBets) {
+    const s = appWallet(allBets), profit = s.bank - APP_START;
+    if (!s.rows.length) return `<div class="sect"><h3>Portefeuille de l’app</h3><div class="empty">L’app n’a encore joué aucun pari. Elle choisit les siens à chaque analyse, à partir de la prochaine.</div></div>`;
+    const done = s.rows.filter(x => x.v.result === 'won' || x.v.result === 'lost');
+    const first = s.days[0];
+    const byDay = groupBy(s.rows, x => x.day);
+    const today = d.window(0).key;
+    let html = `<div class="sect"><h3>Portefeuille de l’app</h3>
+      <p class="recap">L’app a reçu ${euro(APP_START)} le ${esc(longDate(keyDate(first)))} et parie toute seule. Chaque jour, elle choisit au plus 6 paris : jusqu’à 3 « bonnes cotes » (foot, quand son calcul croit nettement plus au pari que les bookmakers) et jusqu’à 3 paris « sûrs » à partir de 1,30. Elle mise 3 % de son solde du matin sur chacun. Elle ne joue jamais un match déjà commencé, un match piège ou un match analysé seulement par les cotes.</p>
       <div class="kpis">
-        <div class="kpi"><div class="l">Solde</div><div class="v num ${profit >= 0 ? 'res-won' : 'res-lost'}">${euro(s.bank)}</div><div class="l">départ ${euro(+W.capital)}</div></div>
+        <div class="kpi"><div class="l">Solde</div><div class="v num ${profit >= 0 ? 'res-won' : 'res-lost'}">${euro(s.bank)}</div><div class="l">départ ${euro(APP_START)}</div></div>
         <div class="kpi"><div class="l">Gain / perte</div><div class="v num ${profit >= 0 ? 'res-won' : 'res-lost'}">${profit >= 0 ? '+' : ''}${euro(profit)}</div><div class="l">${s.staked ? `rendement ${profit >= 0 ? '+' : ''}${t.num(profit / s.staked * 100, 1)} % des mises` : ''}</div></div>
-        <div class="kpi"><div class="l">Paris simulés</div><div class="v num">${s.n}</div><div class="l">${s.pending ? `${s.pending} en attente` : ''}</div></div>
-        <div class="kpi"><div class="l">Meilleure journée</div><div class="v num">${best ? `${best[1].g >= 0 ? '+' : ''}${euro(best[1].g)}` : '-'}</div><div class="l">${best ? esc(longDate(keyDate(best[0]))) : ''}</div></div>
-        <div class="kpi"><div class="l">Pire journée</div><div class="v num">${worst ? euro(worst[1].g) : '-'}</div><div class="l">${worst ? esc(longDate(keyDate(worst[0]))) : ''}</div></div>
+        <div class="kpi"><div class="l">Paris gagnés</div><div class="v num">${done.length ? `${done.filter(x => x.v.result === 'won').length}/${done.length}` : '-'}</div></div>
+        <div class="kpi"><div class="l">En jeu</div><div class="v num">${euro(s.inPlay)}</div><div class="l">${s.rows.filter(x => x.v.result === null).length} pari(s) en attente</div></div>
       </div>
-      ${curveSvg(s.curve, +W.capital)}
-      ${days.length ? `<table class="mini" style="margin-top:10px"><tr><td style="color:var(--muted)">Jour</td><td class="n" style="color:var(--muted)">Paris gagnés</td><td class="n" style="color:var(--muted)">Résultat</td></tr>${days.map(([k, v]) => `<tr class="hrow" data-hday="${k}"><td>${esc(longDate(keyDate(k)))}</td><td class="n">${v.w}/${v.n}</td><td class="n ${v.g >= 0 ? 'res-won' : 'res-lost'}">${v.g >= 0 ? '+' : ''}${euro(v.g)}</td></tr>`).join('')}</table>` : '<div class="empty">Pas encore de pari vérifié dans cette sélection.</div>'}
-      <p class="warn" style="margin-top:12px">Simulation : l’app ne connaît pas la cote exacte de Winamax au moment du pari. Elle utilise la cote mini, diminuée de la marge choisie (Winamax propose souvent un peu moins). Les combinés ne sont pas comptés.</p></div>`;
+      ${curveSvg(s.curve, APP_START)}</div>`;
+    Object.keys(byDay).sort().reverse().forEach(day => {
+      const l = byDay[day], g = l.reduce((a, x) => a + x.gain, 0), dn = l.filter(x => x.v.result === 'won' || x.v.result === 'lost');
+      html += `<div class="sect"><h3>${day === today ? 'Aujourd’hui · ' : ''}${esc(longDate(keyDate(day)))} <span style="color:var(--muted);font-size:14px">${dn.length ? `${dn.filter(x => x.v.result === 'won').length}/${dn.length} gagnés · ` : ''}${dn.length ? `<span class="${g >= 0 ? 'res-won' : 'res-lost'}">${g >= 0 ? '+' : ''}${euro(g)}</span>` : 'en attente'}</span></h3>
+        <table class="mini"><tr style="color:var(--muted)"><td>Heure</td><td>Pari</td><td>Type</td><td class="n">Cote</td><td class="n">Mise</td><td class="n">Résultat</td></tr>${l.map(appBetRow).join('')}</table></div>`;
+    });
+    return html + `<p class="warn">L’app ne voit pas la cote exacte de Winamax : elle prend la cote du marché moins 5 % pour les « bonnes cotes », la cote mini moins 5 % pour les paris « sûrs ». Cliquez sur un pari pour voir son analyse.</p>`;
   }
 
   async function renderHistory() {
@@ -525,7 +540,7 @@
     if (!allBets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, l\'app vérifie automatiquement chaque pronostic : bilans, calendrier et portefeuille simulé se remplissent tout seuls.</div>';
     const per = state.hv.per;
     let html = `<div class="seg hseg">${PERIODS.map(([k, l]) => `<button data-hper="${k}" class="${per === k || (per === 'day' && k === 'cal') ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    if (per === 'wallet') return html + await walletHtml(allBets) + `<p style="margin-top:20px"><button class="btn2" id="clearHist">Effacer l'historique</button></p>`;
+    if (per === 'wallet') return html + walletHtml(allBets);
     if (per === 'cal') return html + calendarHtml(allBets.filter(v => !v.extra));
 
     const [from, to, label] = periodRange(per);
@@ -829,8 +844,10 @@
     const r = await App.engine.loadRemote();
     if (r && !state.result && r.W.key === d.window(state.day).key) {
       state.result = r;
-      const flag = `hist|${r.W.key}|${r.ranAt}`;
-      if (!(await App.db.get('kv', flag))) { await App.engine.saveHistory(r.W.key, r.top, r.combos); await App.db.put('kv', flag, 1); }
+      // analyse publiée avant le portefeuille de l'app : elle choisit ses paris maintenant (matchs à venir seulement)
+      if (!r.app) r.app = App.engine.appPicks(r.all);
+      const flag = `hist2|${r.W.key}|${r.ranAt}`;
+      if (!(await App.db.get('kv', flag))) { await App.engine.saveHistory(r.W.key, r.top, r.combos, r.ranAt, r.app); await App.db.put('kv', flag, 1); }
       dateline(); render(); await pollLive();
     }
     // Vérifie en arrière-plan les résultats des jours précédents (historique), y compris sur téléphone

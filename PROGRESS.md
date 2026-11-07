@@ -117,8 +117,10 @@
   jusqu'à 4 h 25 UTC, lance si 0-7 h Paris et en-ligne/AAAAMMJJ.json absent ; workflow_dispatch toujours.
 - Historique refait : Hier / semaine / mois / année / depuis le début (texte simple + barre empilée + SVG par
   sport, fiabilité, type, jour par jour), calendrier mensuel cliquable, « Mes paris joués » par période.
-- Portefeuille simulé (kv 'wallet') : capital, mise fixe ou %, Top 10/20/50/100 ou mes paris, cote = cote mini
-  − marge (0-8 %) ; courbe du solde, bilan par jour. Combinés non comptés.
+- Portefeuille de l'app (V1.13) : engine.appPicks à chaque analyse (r.app, sérialisé) → jusqu'à 3 « bonnes cotes »
+  (foot 1N2/DC, p calcul ≥ p marché + 3 pts, cote estimée 1/(p marché × 1,05), 1,4-3,5) + 3 « sûrs » (1,30-2,30,
+  cote mini × 0,95) ; jamais marché seul, piège, conf < 0,6, match commencé. Historique : v.app {odd, kind, pm}.
+  100 € au départ, mise 3 % du solde du matin. Analyse sans r.app (ancienne) : choix fait au chargement (hist2|).
 
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.

@@ -264,3 +264,9 @@ tr.detail td { background: var(--panel); padding: 12px 16px 14px 50px; }
   .cday b { font-size: 12px; }
   .hseg button { padding: 6px 8px; font-size: 13px; }
 }
+
+/* ---- Portefeuille de l'app ---- */
+.akind { font: 600 12px var(--cond); text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); white-space: nowrap; }
+.akind.valeur { color: var(--accent); border-color: var(--accent); }
+.mine.appb { background: var(--text); }
+.notes .appn { color: var(--accent); }
