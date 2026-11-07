@@ -5,7 +5,7 @@
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
   const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '', mine: '' }, open: null,
-    sort: 'rel', rev: false, live: {}, played: new Set(), liveMine: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
+    sort: 'rel', rev: false, hv: { per: 'yday', day: null, cal: null }, live: {}, played: new Set(), liveMine: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
   // Tri (Sélection) : [nom, ordre normal, ordre inversé, comparaison dans l'ordre normal]
   // Un clic sur un titre de colonne trie ; un 2e clic sur la même colonne inverse l'ordre.
   const RESO = { won: 0, lost: 1, void: 2 };
@@ -362,65 +362,214 @@
     return `<tr class="hrow ${v.played ? 'is-played' : ''}" data-h="${esc(v._k)}"><td class="n" style="width:30px;color:var(--muted)">${v.extra ? '' : b.rank}</td><td>${v.played ? '<span class="mine">Joué</span> ' : ''}${esc(b.label)}</td><td style="color:var(--muted)">${esc(b.matchName)}</td><td class="n" style="color:var(--muted)">${d.hm(b.ts)}</td><td class="n">${t.pct(b.p)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`
       + (state.hopen === v._k ? `<tr class="hdetail"><td colspan="6">${histDetail(v)}</td></tr>` : '');
   }
+  /* ---------- Historique : bilan par période, calendrier, portefeuille simulé ---------- */
+  const keyDate = k => new Date(+k.slice(0, 4), +k.slice(4, 6) - 1, +k.slice(6));
+  const isDone = v => v.result === 'won' || v.result === 'lost';
+  const wonN = l => l.filter(v => v.result === 'won').length;
+  const rateOf = l => l.length ? wonN(l) / l.length : 0;
+  const expOf = l => l.length ? l.reduce((a, v) => a + v.bet.p, 0) / l.length : 0;
+  const groupBy = (l, f) => { const g = {}; l.forEach(v => { const k = f(v); (g[k] = g[k] || []).push(v); }); return g; };
+  const euro = v => `${v < 0 ? '−' : ''}${t.num(Math.abs(v), 2)} €`;
+  const PERIODS = [['yday', 'Hier'], ['week', 'Cette semaine'], ['month', 'Ce mois'], ['year', 'Cette année'], ['all', 'Depuis le début'], ['cal', 'Calendrier'], ['wallet', 'Portefeuille']];
+
+  function periodRange(per) {
+    const today = d.window(0).key, t0 = keyDate(today);
+    if (per === 'yday') { const y = d.window(-1).key; return [y, y, 'hier']; }
+    if (per === 'day') return [state.hv.day, state.hv.day, `le ${longDate(keyDate(state.hv.day))}`];
+    if (per === 'week') { const s = new Date(t0); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return [d.ymd(s), today, 'cette semaine']; }
+    if (per === 'month') return [d.ymd(new Date(t0.getFullYear(), t0.getMonth(), 1)), today, `en ${t0.toLocaleDateString('fr-FR', { month: 'long' })}`];
+    if (per === 'year') return [d.ymd(new Date(t0.getFullYear(), 0, 1)), today, `en ${t0.getFullYear()}`];
+    return ['00000000', '99999999', 'depuis le début'];
+  }
+
+  // Petit texte simple qui résume la période
+  function recapText(label, done, pending, combos, hards, mine) {
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    if (!done.length) return pending.length ? `${cap(label)} : ${pending.length} pronostic${pending.length > 1 ? 's' : ''} en attente de résultat, rien n’est encore vérifié.` : `${cap(label)} : aucun pronostic enregistré.`;
+    const r = rateOf(done), e = expOf(done), diff = Math.round((r - e) * 100);
+    const out = [`${cap(label)}, ${wonN(done)} paris sur ${done.length} sont passés, soit ${t.pct(r)} de réussite pour ${t.pct(e)} annoncés : ${Math.abs(diff) < 3 ? 'c’est conforme aux prévisions.' : diff > 0 ? `c’est mieux que prévu (+${diff} points).` : `c’est moins bien que prévu (${diff} points).`}`];
+    const sp = Object.entries(groupBy(done, v => v.bet.sport)).filter(([, l]) => l.length >= 3).sort((a, b) => rateOf(b[1]) - rateOf(a[1]));
+    if (sp.length >= 2) out.push(`Le sport le plus réussi : ${SP[sp[0][0]]} (${wonN(sp[0][1])}/${sp[0][1].length}). Le moins réussi : ${SP[sp[sp.length - 1][0]]} (${wonN(sp[sp.length - 1][1])}/${sp[sp.length - 1][1].length}).`);
+    const t10 = done.filter(v => v.bet.rank <= 10);
+    if (t10.length) out.push(`Le top 10 : ${wonN(t10)}/${t10.length}.`);
+    const lost = done.filter(v => v.result === 'lost');
+    if (lost.length && lost.length <= 3) out.push(`Perdu${lost.length > 1 ? 's' : ''} : ${lost.map(v => `${v.bet.label} (${v.bet.matchName})`).join(', ')}.`);
+    const cd = combos.filter(isDone), hd = hards.filter(isDone);
+    if (cd.length) out.push(`Combinés : ${wonN(cd)}/${cd.length}.`);
+    if (hd.length) out.push(`Grosses cotes : ${wonN(hd)}/${hd.length}.`);
+    const md = mine.filter(isDone);
+    if (md.length) out.push(`Vos paris joués : ${wonN(md)}/${md.length}.`);
+    if (pending.length) out.push(`${pending.length} encore en attente.`);
+    return out.join(' ');
+  }
+
+  // Barres horizontales : réussite réelle (barre) et annoncée (trait)
+  function barsSvg(rows) {
+    if (!rows.length) return '';
+    const W = 640, rh = 30, lw = 150, bw = W - lw - 120, H = rows.length * rh + 6;
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Réussite réelle et annoncée">
+      ${rows.map(([lab, real, exp, n, w], i) => { const y = i * rh + 4; return `
+        <text x="0" y="${y + 17}" class="ct">${esc(lab)}</text>
+        <rect x="${lw}" y="${y + 5}" width="${bw}" height="16" class="cbg"/>
+        <rect x="${lw}" y="${y + 5}" width="${Math.max(1, bw * real)}" height="16" class="${real >= exp - 0.03 ? 'cok' : 'cko'}"/>
+        <line x1="${lw + bw * exp}" x2="${lw + bw * exp}" y1="${y + 1}" y2="${y + 25}" class="cexp"/>
+        <text x="${lw + bw + 10}" y="${y + 17}" class="cv">${t.pct(real)} · ${w}/${n}</text>`; }).join('')}
+    </svg>`;
+  }
+  // Colonnes : réussite jour par jour
+  function daysSvg(days) {
+    if (days.length < 2) return '';
+    const W = 640, H = 170, top = 14, bot = 30, cw = Math.min(46, (W - 30) / days.length);
+    const yOf = v => top + (1 - v) * (H - top - bot);
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Réussite par jour">
+      ${[0.5, 0.75, 1].map(v => `<line x1="28" x2="${W}" y1="${yOf(v)}" y2="${yOf(v)}" class="cgrid"/><text x="0" y="${yOf(v) + 4}" class="cv">${Math.round(v * 100)}</text>`).join('')}
+      ${days.map(([k, r, n], i) => { const x = 34 + i * cw; const y = yOf(Math.max(0.5, r)); return `
+        <rect x="${x}" y="${y}" width="${cw - 6}" height="${H - bot - y}" class="${r >= 0.8 ? 'cok' : 'cko'}"><title>${longDate(keyDate(k))} : ${t.pct(r)} (${n} paris)</title></rect>
+        <text x="${x + (cw - 6) / 2}" y="${H - 12}" text-anchor="middle" class="cv">${+k.slice(6)}/${+k.slice(4, 6)}</text>`; }).join('')}
+    </svg>`;
+  }
+  // Barre empilée gagné / perdu / annulé / en attente
+  function stackHtml(l) {
+    const n = l.length; if (!n) return '';
+    const c = { won: 0, lost: 0, void: 0, pend: 0 };
+    l.forEach(v => { c[v.result === 'won' || v.result === 'lost' || v.result === 'void' ? v.result : 'pend']++; });
+    const seg = (k, lab) => c[k] ? `<div class="s-${k}" style="flex:${c[k]}" title="${lab} : ${c[k]}">${c[k] / n >= 0.08 ? c[k] : ''}</div>` : '';
+    return `<div class="stack">${seg('won', 'Gagnés')}${seg('lost', 'Perdus')}${seg('void', 'Annulés')}${seg('pend', 'En attente')}</div>
+      <div class="stackleg"><span class="s-won"></span>Gagnés ${c.won} <span class="s-lost"></span>Perdus ${c.lost} ${c.void ? `<span class="s-void"></span>Annulés ${c.void} ` : ''}${c.pend ? `<span class="s-pend"></span>En attente ${c.pend}` : ''}</div>`;
+  }
+
+  function calendarHtml(bets) {
+    const today = d.window(0).key;
+    const ym = state.hv.cal || today.slice(0, 6);
+    const y = +ym.slice(0, 4), m = +ym.slice(4) - 1;
+    const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
+    const byDay = groupBy(bets, v => v.day);
+    let cells = '';
+    for (let i = 0; i < (first.getDay() + 6) % 7; i++) cells += '<div class="cday empty"></div>';
+    for (let n = 1; n <= days; n++) {
+      const k = d.ymd(new Date(y, m, n)), l = byDay[k] || [], dn = l.filter(isDone);
+      const cls = !l.length ? 'none' : !dn.length ? 'pend' : rateOf(dn) >= expOf(dn) - 0.03 ? 'good' : 'bad';
+      cells += `<div class="cday ${cls} ${k === today ? 'today' : ''}" ${l.length ? `data-hday="${k}"` : ''}><b>${n}</b>${dn.length ? `<span>${wonN(dn)}/${dn.length}</span><i>${t.pct(rateOf(dn))}</i>` : l.length ? '<span>en attente</span>' : ''}</div>`;
+    }
+    const prev = d.ymd(new Date(y, m - 1, 1)).slice(0, 6), next = d.ymd(new Date(y, m + 1, 1)).slice(0, 6);
+    return `<div class="cal"><div class="calhead"><button class="btn2" data-cal="${prev}">‹</button><b>${first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</b><button class="btn2" data-cal="${next}">›</button></div>
+      <div class="calgrid">${['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map(x => `<div class="cdow">${x}</div>`).join('')}${cells}</div>
+      <p class="warn">Cliquez sur un jour pour voir son bilan et tous ses pronostics. Vert : au moins aussi bien que prévu ; rouge : moins bien.</p></div>`;
+  }
+
+  /* ---------- Portefeuille simulé ---------- */
+  const WALLET = { capital: 100, mode: 'fixed', stake: 2, scope: 'top20', margin: 5 };
+  function simulate(bets, W) {
+    const pick = W.scope === 'mine' ? bets.filter(v => v.played) : bets.filter(v => !v.extra && v.bet.rank <= +W.scope.slice(3));
+    const list = pick.filter(v => v.result === 'won' || v.result === 'lost' || v.result === 'void').sort((a, b) => a.bet.ts - b.bet.ts);
+    let bank = +W.capital, staked = 0;
+    const curve = [[list.length ? list[0].bet.ts : Date.now(), bank]], perDay = {};
+    for (const v of list) {
+      if (bank <= 0.01) break;
+      const stake = Math.min(bank, W.mode === 'pct' ? bank * W.stake / 100 : +W.stake);
+      const odd = Math.max(1.01, (1 / v.bet.p) * (1 - W.margin / 100));
+      const gain = v.result === 'won' ? stake * (odd - 1) : v.result === 'lost' ? -stake : 0;
+      if (v.result !== 'void') staked += stake;
+      bank += gain;
+      (perDay[v.day] = perDay[v.day] || { n: 0, w: 0, g: 0 }).n += v.result === 'void' ? 0 : 1;
+      if (v.result === 'won') perDay[v.day].w++;
+      perDay[v.day].g += gain;
+      curve.push([v.bet.ts, bank]);
+    }
+    return { bank, staked, curve, perDay, n: list.filter(v => v.result !== 'void').length, pending: pick.filter(v => v.result === null).length };
+  }
+  function curveSvg(curve, start) {
+    if (curve.length < 2) return '';
+    const W = 640, H = 180, pad = 34;
+    const vals = curve.map(c => c[1]), lo = Math.min(start, ...vals), hi = Math.max(start, ...vals), span = (hi - lo) || 1;
+    const x = i => pad + i * (W - pad - 6) / (curve.length - 1), y = v => 10 + (1 - (v - lo) / span) * (H - 34);
+    const pts = curve.map((c, i) => `${x(i).toFixed(1)},${y(c[1]).toFixed(1)}`).join(' ');
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution du solde">
+      <line x1="${pad}" x2="${W}" y1="${y(start)}" y2="${y(start)}" class="cgrid"/>
+      <text x="0" y="${y(hi) + 4}" class="cv">${Math.round(hi)}</text><text x="0" y="${y(lo) + 4}" class="cv">${Math.round(lo)}</text>
+      <polyline points="${pts}" class="cline ${vals[vals.length - 1] >= start ? 'up' : 'down'}"/>
+      <text x="${pad}" y="${H - 6}" class="cv">${esc(longDate(curve[0][0]))}</text><text x="${W - 6}" y="${H - 6}" text-anchor="end" class="cv">${esc(longDate(curve[curve.length - 1][0]))}</text>
+    </svg>`;
+  }
+  async function walletHtml(bets) {
+    const W = { ...WALLET, ...((await App.db.get('kv', 'wallet')) || {}) };
+    const s = simulate(bets, W), profit = s.bank - W.capital;
+    const sel = (k, opts) => `<select data-w="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(W[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const days = Object.entries(s.perDay).sort((a, b) => b[0].localeCompare(a[0]));
+    const best = days.length ? days.reduce((a, b) => b[1].g > a[1].g ? b : a) : null, worst = days.length ? days.reduce((a, b) => b[1].g < a[1].g ? b : a) : null;
+    return `<div class="sect"><h3>Portefeuille simulé</h3>
+      <p style="max-width:900px;line-height:1.55">L’app joue « pour de faux » avec un capital de départ, depuis le premier jour de l’historique : chaque pari de la sélection choisie est misé, puis gagné ou perdu selon le vrai résultat. De quoi voir ce que la méthode aurait rapporté, sans risquer un euro.</p>
+      <div class="filters wallet">
+        <label>Capital de départ <input type="number" min="1" step="1" data-w="capital" value="${W.capital}"> €</label>
+        <label>Mise ${sel('mode', [['fixed', 'fixe'], ['pct', 'en % du solde']])} <input type="number" min="0.1" step="0.1" data-w="stake" value="${W.stake}"> ${W.mode === 'pct' ? '%' : '€'}</label>
+        <label>Paris joués ${sel('scope', [['top10', 'Top 10 du jour'], ['top20', 'Top 20 du jour'], ['top50', 'Top 50 du jour'], ['top100', 'Les 100 du jour'], ['mine', 'Mes paris cochés « Joué »']])}</label>
+        <label>Cote utilisée ${sel('margin', [[0, 'cote mini'], [3, 'cote mini − 3 %'], [5, 'cote mini − 5 %'], [8, 'cote mini − 8 %']])}</label>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="l">Solde</div><div class="v num ${profit >= 0 ? 'res-won' : 'res-lost'}">${euro(s.bank)}</div><div class="l">départ ${euro(+W.capital)}</div></div>
+        <div class="kpi"><div class="l">Gain / perte</div><div class="v num ${profit >= 0 ? 'res-won' : 'res-lost'}">${profit >= 0 ? '+' : ''}${euro(profit)}</div><div class="l">${s.staked ? `rendement ${profit >= 0 ? '+' : ''}${t.num(profit / s.staked * 100, 1)} % des mises` : ''}</div></div>
+        <div class="kpi"><div class="l">Paris simulés</div><div class="v num">${s.n}</div><div class="l">${s.pending ? `${s.pending} en attente` : ''}</div></div>
+        <div class="kpi"><div class="l">Meilleure journée</div><div class="v num">${best ? `${best[1].g >= 0 ? '+' : ''}${euro(best[1].g)}` : '-'}</div><div class="l">${best ? esc(longDate(keyDate(best[0]))) : ''}</div></div>
+        <div class="kpi"><div class="l">Pire journée</div><div class="v num">${worst ? euro(worst[1].g) : '-'}</div><div class="l">${worst ? esc(longDate(keyDate(worst[0]))) : ''}</div></div>
+      </div>
+      ${curveSvg(s.curve, +W.capital)}
+      ${days.length ? `<table class="mini" style="margin-top:10px"><tr><td style="color:var(--muted)">Jour</td><td class="n" style="color:var(--muted)">Paris gagnés</td><td class="n" style="color:var(--muted)">Résultat</td></tr>${days.map(([k, v]) => `<tr class="hrow" data-hday="${k}"><td>${esc(longDate(keyDate(k)))}</td><td class="n">${v.w}/${v.n}</td><td class="n ${v.g >= 0 ? 'res-won' : 'res-lost'}">${v.g >= 0 ? '+' : ''}${euro(v.g)}</td></tr>`).join('')}</table>` : '<div class="empty">Pas encore de pari vérifié dans cette sélection.</div>'}
+      <p class="warn" style="margin-top:12px">Simulation : l’app ne connaît pas la cote exacte de Winamax au moment du pari. Elle utilise la cote mini, diminuée de la marge choisie (Winamax propose souvent un peu moins). Les combinés ne sont pas comptés.</p></div>`;
+  }
+
   async function renderHistory() {
     const raw = await App.db.all('history');
     raw.forEach(([k, v]) => { v._k = k; });
-    const entries = raw.map(([k, v]) => v);
+    const entries = raw.map(([, v]) => v);
     const allBets = entries.filter(v => v.type === 'B');
-    const myBets = allBets.filter(v => v.played), myCombos = entries.filter(v => v.type === 'C' && v.played);
-    const bets = allBets.filter(v => !v.extra); // statistiques de la sélection : sans les paris ajoutés à la main
-    const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard' && !v.extra);
-    const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard' && !v.extra);
-    const done = bets.filter(v => v.result === 'won' || v.result === 'lost');
-    const noPlay = '<div class="sect"><h3>Mes paris joués</h3><div class="empty" style="padding:18px">Aucun pari marqué pour l’instant. Cochez la case <strong>Joué</strong> devant un pari (Sélection) ou « Je le joue » sur un combiné : il apparaîtra ici avec son résultat et votre taux de réussite.</div></div>';
-    if (!allBets.length) return noPlay + '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, en cliquant sur Analyser, l\'app vérifie automatiquement chaque pronostic et calcule son taux de réussite réel.</div>';
-    const rate = l => { const w = l.filter(v => v.result === 'won').length; return l.length ? w / l.length : 0; };
-    const exp = l => l.length ? l.reduce((a, b) => a + b.bet.p, 0) / l.length : 0;
-    const cDone = combos.filter(v => v.result === 'won' || v.result === 'lost');
-    const wl = l => l.filter(v => v.result === 'won' || v.result === 'lost');
-    const myDone = wl(myBets), myCDone = wl(myCombos);
-    let html = '';
-    if (myBets.length || myCombos.length) {
-      html += `<div class="sect"><h3>Mes paris joués</h3><div class="kpis">
-        <div class="kpi"><div class="l">Paris simples gagnés</div><div class="v num">${myDone.length ? `${myDone.filter(v => v.result === 'won').length}/${myDone.length}` : '-'}</div><div class="l">${myDone.length ? `${t.pct(rate(myDone))} réel · ${t.pct(exp(myDone))} annoncé` : ''}</div></div>
-        <div class="kpi"><div class="l">Combinés gagnés</div><div class="v num">${myCDone.length ? `${myCDone.filter(v => v.result === 'won').length}/${myCDone.length}` : '-'}</div></div>
-        <div class="kpi"><div class="l">En attente</div><div class="v num">${myBets.filter(v => v.result === null).length + myCombos.filter(v => v.result === null).length}</div></div>
-      </div>
-      <table class="mini">${myBets.sort((a, b) => b.bet.ts - a.bet.ts).slice(0, 40).map(histRow).join('')}</table>
-      ${myCombos.length ? `<table class="mini" style="margin-top:8px">${myCombos.sort((a, b) => b.legs[0].ts - a.legs[0].ts).slice(0, 20).map(v => `<tr><td><span class="mine">Joué</span> Combiné ${v.legs.length} paris : ${v.legs.map(l => esc(l.label)).join(' + ')}</td><td class="n">${t.num(1 / v.p, 2)}</td><td class="n res-${v.result || 'pending'}" style="width:80px">${RESTXT(v)}</td></tr>`).join('')}</table>` : ''}
-      </div><h3 style="margin-top:26px;font-family:var(--cond);text-transform:uppercase">Toute la sélection</h3>`;
-    } else html += noPlay + '<h3 style="margin-top:26px;font-family:var(--cond);text-transform:uppercase">Toute la sélection</h3>';
-    html += `<div class="kpis">
-      <div class="kpi"><div class="l">Paris vérifiés</div><div class="v num">${done.length}</div></div>
-      <div class="kpi"><div class="l">Taux de réussite réel</div><div class="v num">${done.length ? t.pct(rate(done)) : '-'}</div></div>
-      <div class="kpi"><div class="l">Fiabilité annoncée (moyenne)</div><div class="v num">${done.length ? t.pct(exp(done)) : '-'}</div></div>
-      <div class="kpi"><div class="l">Top 10 : réussite</div><div class="v num">${(() => { const l = done.filter(v => v.bet.rank <= 10); return l.length ? t.pct(rate(l)) : '-'; })()}</div></div>
-      <div class="kpi"><div class="l">Combinés gagnés</div><div class="v num">${cDone.length ? `${cDone.filter(v => v.result === 'won').length}/${cDone.length}` : '-'}</div></div>
-      <div class="kpi"><div class="l">Grosses cotes gagnées</div><div class="v num">${(() => { const l = hards.filter(v => v.result === 'won' || v.result === 'lost'); return l.length ? `${l.filter(v => v.result === 'won').length}/${l.length}` : '-'; })()}</div></div>
-      <div class="kpi"><div class="l">En attente</div><div class="v num">${bets.filter(v => v.result === null).length}</div></div>
-    </div>`;
-    const table = (title, keyFn) => {
-      const g = {};
-      done.forEach(v => { const k = keyFn(v); (g[k] = g[k] || []).push(v); });
-      const rows = Object.entries(g).sort((a, b) => b[1].length - a[1].length);
-      return `<div class="sect"><h3>${title}</h3><table class="mini"><tr><td style="color:var(--muted)"></td><td class="n" style="color:var(--muted)">Paris</td><td class="n" style="color:var(--muted)">Annoncé</td><td class="n" style="color:var(--muted)">Réel</td></tr>${rows.map(([k, l]) => `<tr><td>${esc(k)}</td><td class="n">${l.length}</td><td class="n">${t.pct(exp(l))}</td><td class="n ${rate(l) >= exp(l) - 0.03 ? 'res-won' : 'res-lost'}">${t.pct(rate(l))}</td></tr>`).join('')}</table></div>`;
-    };
+    if (!allBets.length) return '<div class="empty"><strong>Pas encore d\'historique.</strong><br>Chaque analyse enregistre la sélection du jour. Le lendemain, l\'app vérifie automatiquement chaque pronostic : bilans, calendrier et portefeuille simulé se remplissent tout seuls.</div>';
+    const per = state.hv.per;
+    let html = `<div class="seg hseg">${PERIODS.map(([k, l]) => `<button data-hper="${k}" class="${per === k || (per === 'day' && k === 'cal') ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    if (per === 'wallet') return html + await walletHtml(allBets) + `<p style="margin-top:20px"><button class="btn2" id="clearHist">Effacer l'historique</button></p>`;
+    if (per === 'cal') return html + calendarHtml(allBets.filter(v => !v.extra));
+
+    const [from, to, label] = periodRange(per);
+    const inP = v => v.day >= from && v.day <= to;
+    const bets = allBets.filter(v => !v.extra && inP(v));
+    const mine = allBets.filter(v => v.played && inP(v));
+    const combos = entries.filter(v => v.type === 'C' && v.kind !== 'hard' && !v.extra && inP(v));
+    const hards = entries.filter(v => v.type === 'C' && v.kind === 'hard' && !v.extra && inP(v));
+    const done = bets.filter(isDone), pending = bets.filter(v => v.result === null);
+    if (per === 'day') html += `<p><button class="btn2" data-hper="cal">‹ Retour au calendrier</button></p>`;
+    html += `<div class="sect"><h3>Bilan ${esc(label)}</h3><p class="recap">${esc(recapText(label, done, pending, combos, hards, mine))}</p>${stackHtml(bets)}</div>`;
     if (done.length) {
-      html += `<div class="two">
-        ${table('Par sport', v => SP[v.bet.sport])}
-        ${table('Par type de pari', v => v.bet.group)}
-        ${table('Par niveau de fiabilité', v => { const p = v.bet.p; return p >= 0.9 ? '90 % et plus' : p >= 0.8 ? '80 - 89 %' : p >= 0.7 ? '70 - 79 %' : p >= 0.6 ? '60 - 69 %' : 'moins de 60 %'; })}
+      const t10 = done.filter(v => v.bet.rank <= 10), t30 = done.filter(v => v.bet.rank <= 30);
+      const cd = combos.filter(isDone), hd = hards.filter(isDone);
+      html += `<div class="kpis">
+        <div class="kpi"><div class="l">Paris vérifiés</div><div class="v num">${done.length}</div></div>
+        <div class="kpi"><div class="l">Réussite réelle</div><div class="v num">${t.pct(rateOf(done))}</div><div class="l">annoncée ${t.pct(expOf(done))}</div></div>
+        <div class="kpi"><div class="l">Top 10</div><div class="v num">${t10.length ? `${wonN(t10)}/${t10.length}` : '-'}</div></div>
+        <div class="kpi"><div class="l">Top 30</div><div class="v num">${t30.length ? `${wonN(t30)}/${t30.length}` : '-'}</div></div>
+        <div class="kpi"><div class="l">Combinés</div><div class="v num">${cd.length ? `${wonN(cd)}/${cd.length}` : '-'}</div></div>
+        <div class="kpi"><div class="l">Grosses cotes</div><div class="v num">${hd.length ? `${wonN(hd)}/${hd.length}` : '-'}</div></div>
       </div>`;
+      const rows = (f, order) => Object.entries(groupBy(done, f)).map(([k, l]) => [k, rateOf(l), expOf(l), l.length, wonN(l)]).sort(order || ((a, b) => b[3] - a[3]));
+      const fiab = v => { const p = v.bet.p; return p >= 0.95 ? '95 % et plus' : p >= 0.9 ? '90 - 94 %' : p >= 0.8 ? '80 - 89 %' : p >= 0.7 ? '70 - 79 %' : 'moins de 70 %'; };
+      html += `<div class="sect"><h3>Par sport</h3>${barsSvg(rows(v => SP[v.bet.sport] || v.bet.sport))}</div>
+        <div class="sect"><h3>Par niveau de fiabilité</h3>${barsSvg(rows(fiab, (a, b) => b[0].localeCompare(a[0])))}</div>
+      <div class="sect"><h3>Par type de pari</h3>${barsSvg(rows(v => v.bet.group).slice(0, 10))}</div>
+      <p class="warn">Barre : réussite réelle (vert si au niveau annoncé, rouge sinon). Trait blanc : fiabilité annoncée.</p>`;
+      const byDay = Object.entries(groupBy(done, v => v.day)).sort((a, b) => a[0].localeCompare(b[0]));
+      if (byDay.length > 1) html += `<div class="sect"><h3>Jour par jour</h3>${daysSvg(byDay.map(([k, l]) => [k, rateOf(l), l.length]))}</div>`;
     }
-    // Liste par jour
-    const days = [...new Set(bets.map(v => v.day))].sort().reverse();
-    days.forEach(day => {
-      const l = bets.filter(v => v.day === day).sort((a, b) => a.bet.rank - b.bet.rank);
-      const dd = l.filter(v => v.result === 'won' || v.result === 'lost');
-      const label = new Date(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6)).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-      html += `<div class="sect"><h3>${label} <span style="color:var(--muted);font-size:14px">${dd.length ? `${dd.filter(v => v.result === 'won').length}/${dd.length} gagnés` : 'en attente'}</span></h3>
-        <table class="mini">${l.map(histRow).join('')}</table></div>`;
-    });
+    // Mes paris joués sur la période
+    if (mine.length) {
+      const md = mine.filter(isDone);
+      html += `<div class="sect"><h3>Mes paris joués <span style="color:var(--muted);font-size:14px">${md.length ? `${wonN(md)}/${md.length} gagnés` : 'en attente'}</span></h3>
+        <table class="mini">${mine.sort((a, b) => b.bet.ts - a.bet.ts).slice(0, 60).map(histRow).join('')}</table></div>`;
+    } else if (per === 'yday' || per === 'day') html += '<p class="warn">Astuce : cochez la case <strong>Joué</strong> devant les paris que vous jouez, ils seront suivis à part ici.</p>';
+    // Détail : un jour → tous ses pronostics ; plusieurs jours → un résumé par jour
+    if (from === to) {
+      html += `<div class="sect"><h3>Tous les pronostics</h3><table class="mini">${bets.sort((a, b) => a.bet.rank - b.bet.rank).map(histRow).join('')}</table></div>`;
+    } else {
+      const days = Object.entries(groupBy(bets, v => v.day)).sort((a, b) => b[0].localeCompare(a[0]));
+      html += `<div class="sect"><h3>Par jour</h3><table class="mini"><tr><td style="color:var(--muted)">Jour</td><td class="n" style="color:var(--muted)">Gagnés</td><td class="n" style="color:var(--muted)">Réel</td><td class="n" style="color:var(--muted)">Annoncé</td></tr>${days.map(([k, l]) => { const dn = l.filter(isDone); return `<tr class="hrow" data-hday="${k}"><td>${esc(longDate(keyDate(k)))}</td><td class="n">${dn.length ? `${wonN(dn)}/${dn.length}` : 'en attente'}</td><td class="n">${dn.length ? t.pct(rateOf(dn)) : ''}</td><td class="n">${dn.length ? t.pct(expOf(dn)) : ''}</td></tr>`; }).join('')}</table></div>`;
+    }
     html += `<p style="margin-top:20px"><button class="btn2" id="clearHist">Effacer l'historique</button></p>`;
     return html;
   }
@@ -589,6 +738,13 @@
     const el = e.target;
     if (el.dataset.f) { state.filters[el.dataset.f] = el.value; render(); return; }
     if (el.dataset.cf) { state.cfilters[el.dataset.cf] = el.value; render(); return; }
+    if (el.dataset.w) {
+      const w = (await App.db.get('kv', 'wallet')) || {};
+      const num = ['capital', 'stake', 'margin'].includes(el.dataset.w);
+      const v = num ? Math.max(0, +String(el.value).replace(',', '.') || 0) : el.value;
+      if (!num || v > 0 || el.dataset.w === 'margin') w[el.dataset.w] = v;
+      await App.db.put('kv', 'wallet', w); render(); return;
+    }
     if (el.dataset.sortSel) { const [k, rv] = el.value.split('|'); state.sort = k; state.rev = rv === '1'; render(); return; }
     if (el.dataset.comp || el.id === 'maxPer' || el.id === 'minOdd') {
       const s = (await App.db.get('kv', 'settings')) || {};
@@ -630,6 +786,12 @@
     const row = e.target.closest('tr.row');
     if (row) { state.open = state.open === row.dataset.id ? null : row.dataset.id; render(); return; }
     if (e.target.id === 'liveMine') { state.liveMine = e.target.checked; render(); return; }
+    const hp = e.target.closest('[data-hper]');
+    if (hp) { state.hv.per = hp.dataset.hper; state.hopen = null; render(); return; }
+    const hd = e.target.closest('[data-hday]');
+    if (hd) { state.hv.per = 'day'; state.hv.day = hd.dataset.hday; state.hv.cal = hd.dataset.hday.slice(0, 6); state.hopen = null; render(); window.scrollTo(0, 0); return; }
+    const cl = e.target.closest('[data-cal]');
+    if (cl) { state.hv.cal = cl.dataset.cal; render(); return; }
     const gt = e.target.closest('[data-gotab]');
     if (gt) { e.preventDefault(); document.querySelector(`#tabs button[data-tab="${gt.dataset.gotab}"]`).click(); return; }
     const gd = e.target.closest('[data-goday]');

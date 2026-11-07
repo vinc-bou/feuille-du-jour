@@ -112,6 +112,14 @@
   (créée avec extra:true si hors top 100 ; extra exclu des stats de la sélection, jamais supprimée par saveHistory).
   Filtre « Mes paris joués » ; Historique : bloc « Mes paris joués » (taux réel, combinés). Stocké par appareil.
 
+## Bilans, calendrier, portefeuille + retards GitHub (2026-11-07, V1.12)
+- 7/11 : crons GitHub retardés de 3 h → analyse sautée (contrôle « minuit »). analyse.yml : crons de secours
+  jusqu'à 4 h 25 UTC, lance si 0-7 h Paris et en-ligne/AAAAMMJJ.json absent ; workflow_dispatch toujours.
+- Historique refait : Hier / semaine / mois / année / depuis le début (texte simple + barre empilée + SVG par
+  sport, fiabilité, type, jour par jour), calendrier mensuel cliquable, « Mes paris joués » par période.
+- Portefeuille simulé (kv 'wallet') : capital, mise fixe ou %, Top 10/20/50/100 ou mes paris, cote = cote mini
+  − marge (0-8 %) ; courbe du solde, bilan par jour. Combinés non comptés.
+
 ## Sources étudiées et écartées (2026-11-06)
 - API-Football (blessés, entraîneurs) : gratuit avec compte + clé personnelle → proposé, non intégré.
 - Archive tennis Sackmann (miroir) : arrêtée au 25/06/2026. TML-Database : 2026 incomplet. ClubElo : en panne.
