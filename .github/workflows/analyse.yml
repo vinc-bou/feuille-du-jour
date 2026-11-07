@@ -13,7 +13,12 @@ on:
     - cron: '25 2 * * *'
     - cron: '25 3 * * *'
     - cron: '25 4 * * *'
-  workflow_dispatch: {}      # bouton « Run workflow » pour lancer à la main
+  workflow_dispatch:         # bouton « Run workflow » pour lancer à la main
+    inputs:
+      collecte:
+        description: 'Recollecter les cotes API-Football (non = réutiliser celles de la nuit, quota épuisé)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -68,7 +73,7 @@ jobs:
           restore-keys: donnees-
 
       - name: Collecte API-Football (tous les matchs proposés par les bookmakers)
-        if: steps.heure.outputs.go == '1'
+        if: steps.heure.outputs.go == '1' && (github.event_name != 'workflow_dispatch' || inputs.collecte)
         env:
           APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
         run: python collecte_api.py
