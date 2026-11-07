@@ -312,8 +312,9 @@ App.engine = (() => {
   // Jamais : analyse « marché » seule, match piège, confiance faible, match déjà commencé.
   const APP = { value: 3, reliable: 3, minOdd: 1.30, maxOdd: 2.30 };
   const SAFE_F = 0.91;
-  // Cote Winamax ≈ cote juste du marché × 0,89 (relevé le 7/11 : Osasuna ou nul, marché 1,85 → Winamax 1,64)
-  const VALUE_F = 0.89;
+  // Cote Winamax ≈ cote juste du marché × 0,875 (relevés du 7/11 : Osasuna ou nul 1,85 → 1,64 ;
+  // portefeuille 2,37 → 2,32 · 3,09 → 3,05 · 2,81 → 2,75 avec 0,89) : estimation volontairement prudente
+  const VALUE_F = 0.875;
   function marketP(b) {
     const m = b.a && b.a.market, s = b.settle;
     if (!m || b.sport !== 'soccer' || m.p1 === undefined) return null;
