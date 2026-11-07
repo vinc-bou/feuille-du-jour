@@ -276,7 +276,7 @@
       <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).filter(([k]) => k !== 'res' || r.replay).map(([k, v]) => [0, 1].map(rv => `<option value="${k}|${rv}" ${k === state.sort && !!rv === state.rev ? 'selected' : ''}>Trier : ${v[0]} (${v[1 + rv]})</option>`).join('')).join('')}</select>
       <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''}${f.oddMin || f.oddMax ? ' dans cette fourchette de cotes' : ''} · ${r.analyses.length} matchs analysés</span>
     </div>`;
-    if (f.value) html += `<p class="why"><b>Paris qui rapportent</b>Ici, l’app ne classe plus par fiabilité mais par gain attendu : ce sont les paris où la cote probable chez les bookmakers est plus haute que la cote mini de l’app. Exemple : +8 % veut dire qu’en moyenne, 100 € misés sur ce type de pari rapportent 108 €. Jouez-le seulement si Winamax propose au moins la cote mini. Pour l’instant, seuls les matchs de foot avec des cotes de bookmakers connues peuvent être évalués (1N2, double chance, plus ou moins de 2,5 buts).</p>`;
+    if (f.value) html += `<p class="why"><b>Paris qui rapportent</b>Ici, l’app ne classe plus par fiabilité mais par gain attendu : ce sont les paris où la cote Winamax estimée (cote des bookmakers moins la marge habituelle de Winamax, environ 11 %) reste plus haute que la cote mini de l’app. Exemple : +8 % veut dire qu’en moyenne, 100 € misés sur ce type de pari rapportent 108 €. Jouez-le seulement si Winamax propose au moins la cote mini. Pour l’instant, seuls les matchs de foot avec des cotes de bookmakers connues peuvent être évalués (1N2, double chance, plus ou moins de 2,5 buts).</p>`;
     if (!rows.length) return html + `<div class="empty">${f.value ? 'Aucun pari qui rapporte n’a été trouvé pour cette journée (ou avec ces filtres).' : 'Aucun pari ne correspond à ces filtres.'}</div>`;
     const th = (k, txt, st) => `<th data-sort="${k}" class="${state.sort === k ? 'sorted' : ''}" ${st ? `style="${st}"` : ''} title="Trier (cliquer à nouveau pour inverser)">${txt}${state.sort === k ? (state.rev ? ' ▲' : ' ▼') : ''}</th>`;
     html += `<table class="grid"><thead><tr><th class="pl" title="Cochez les paris que vous jouez">Joué</th><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
@@ -293,7 +293,7 @@
         <td class="rel"><span class="v num">${t.pct(b.p)}</span><div class="bar"><div style="width:${Math.round(b.p * 100)}%"></div></div></td>
         <td class="odd num">${t.odd(b.p)}</td>
         <td class="conf ${confCls(b.conf)}"><i></i>${confTxt(b.conf)}</td>
-        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${f.value && b.val ? `<span class="valn">≈ ${t.num(b.val.odd, 2)} chez les bookmakers · +${Math.round((b.val.ev - 1) * 100)} %</span>` : ''}${aIds.has(b.id) ? '<span class="appn">Joué par l’app</span>' : ''}${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
+        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${f.value && b.val ? `<span class="valn">Winamax ≈ ${t.num(b.val.odd, 2)} · +${Math.round((b.val.ev - 1) * 100)} %</span>` : ''}${aIds.has(b.id) ? '<span class="appn">Joué par l’app</span>' : ''}${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
         ${r.replay ? `<td class="res res-${b.result}">${RES[b.result] || ''}<div style="color:var(--dim);font-size:12px">${esc(realScore(b.a))}</div></td>` : ''}
       </tr>`;
       if (open) html += `<tr class="detail"><td colspan="11">${detailHtml(b.a, b.id)}</td></tr>`;
@@ -498,7 +498,8 @@
       l.sort((a, b) => a.bet.ts - b.bet.ts).forEach(v => {
         const stake = Math.max(1, Math.round(start * APP_FRAC * 100) / 100);
         // paris « sûrs » : cote estimée corrigée (Winamax paie moins que prévu au départ)
-        const odd = v.app.kind === 'fiable' ? Math.max(1.01, Math.round(App.engine.SAFE_F / v.bet.p * 100) / 100) : v.app.odd;
+        const odd = v.app.kind === 'fiable' ? Math.max(1.01, Math.round(App.engine.SAFE_F / v.bet.p * 100) / 100)
+          : v.app.pm ? Math.round(App.engine.VALUE_F / v.app.pm * 100) / 100 : v.app.odd;
         const gain = v.result === 'won' ? stake * (odd - 1) : v.result === 'lost' ? -stake : 0;
         if (v.result === 'won' || v.result === 'lost') staked += stake;
         if (v.result === null) inPlay += stake;
@@ -541,7 +542,7 @@
       html += `<div class="sect"><h3>${day === today ? 'Aujourd’hui · ' : ''}${esc(longDate(keyDate(day)))} <span style="color:var(--muted);font-size:14px">${dn.length ? `${dn.filter(x => x.v.result === 'won').length}/${dn.length} gagnés · ` : ''}${dn.length ? `<span class="${g >= 0 ? 'res-won' : 'res-lost'}">${g >= 0 ? '+' : ''}${euro(g)}</span>` : 'en attente'}</span></h3>
         <table class="mini"><tr style="color:var(--muted)"><td>Heure</td><td>Pari</td><td>Type</td><td class="n">Cote</td><td class="n">Mise</td><td class="n">Résultat</td></tr>${l.map(appBetRow).join('')}</table></div>`;
     });
-    return html + `<p class="warn">L’app ne voit pas la cote exacte de Winamax : elle prend la cote du marché moins 5 % pour les « bonnes cotes », et environ 9 % de moins que la cote mini pour les paris « sûrs » (1,18 pour une cote mini de 1,30), comme constaté sur Winamax. Cliquez sur un pari pour voir son analyse.</p>`;
+    return html + `<p class="warn">L’app ne voit pas la cote exacte de Winamax : elle prend la cote des bookmakers moins 11 % pour les « bonnes cotes » et la cote mini moins 9 % pour les paris « sûrs », comme relevé sur Winamax. Cliquez sur un pari pour voir son analyse.</p>`;
   }
 
   async function renderHistory() {

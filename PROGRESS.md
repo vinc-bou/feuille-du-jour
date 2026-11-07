@@ -123,7 +123,7 @@
   100 € au départ, mise 3 % du solde du matin. Analyse sans r.app (ancienne) : choix fait au chargement (hist2|).
 
 ## Paris qui rapportent (2026-11-07, V1.14)
-- engine.valueOf(b) : foot 1N2 / DC / ±2,5 buts avec avis du marché ; cote probable = 1/(p marché × 1,05),
+- engine.valueOf(b) : foot 1N2 / DC / ±2,5 buts avec avis du marché ; cote Winamax = 0,89 / p marché (relevé Osasuna 1,64),
   ev = p × cote ; gardé si p ≥ 0,40, conf ≥ 0,6, ev ≤ 1,25. Filtre Sélection « Paris qui rapportent » (ev ≥ 1,02,
   tri par ev). appPicks « bonnes cotes » = même calcul (ev ≥ 1,03, cote 1,4-3,5). serialize garde aussi ces paris.
 - Constat 6/11 : 2 € × 100 paris (cotes 1,15-1,29) → 82 G / 12 P ; +9,9 € à la cote mini, −7,9 € à la cote Winamax.
