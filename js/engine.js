@@ -317,14 +317,24 @@ App.engine = (() => {
     if (!m || b.sport !== 'soccer' || m.p1 === undefined) return null;
     if (s.k === '1x2') return s.sel === '1' ? m.p1 : s.sel === '2' ? m.p2 : m.pX;
     if (s.k === 'dc') return s.sel === '1X' ? m.p1 + m.pX : s.sel === 'X2' ? m.pX + m.p2 : m.p1 + m.p2;
+    if (s.k === 'tot' && s.line === 2.5 && m.pO !== undefined) return s.side === 'o' ? m.pO : 1 - m.pO;
     return null;
+  }
+  // Pari « qui rapporte » : la cote probable chez le bookmaker (moyenne du marché, marge 5 %) paie plus que le risque
+  // calculé par l'app. ev = gain moyen pour 1 € misé (1,08 = +8 %).
+  function valueOf(b) {
+    const pm = marketP(b);
+    // au moins 40 % de chances (pas de coups de poker) ; un écart énorme avec le marché = donnée douteuse
+    if (!pm || b.conf < 0.6 || b.p < 0.4) return null;
+    const odd = 1 / (pm * 1.05), ev = b.p * odd;
+    return ev > 1.25 ? null : { pm, odd, ev };
   }
   function appPicks(all, now = Date.now()) {
     const ok = b => b.ts > now + 5 * 60000 && b.conf >= 0.6 && !(b.notes || []).includes('Match piège') && b.a && b.a.analysisType !== 'marche';
     const used = new Set(), out = [];
-    all.filter(ok).map(b => ({ b, pm: marketP(b) })).filter(x => x.pm && x.b.p - x.pm >= 0.03)
-      .map(x => ({ ...x, odd: 1 / (x.pm * 1.05) })).filter(x => x.odd >= 1.4 && x.odd <= 3.5)
-      .sort((x, y) => y.b.p * y.odd - x.b.p * x.odd)
+    all.filter(ok).map(b => ({ b, v: valueOf(b) })).filter(x => x.v && x.v.ev >= 1.03 && x.v.odd >= 1.4 && x.v.odd <= 3.5)
+      .map(x => ({ ...x, pm: x.v.pm, odd: x.v.odd }))
+      .sort((x, y) => y.v.ev - x.v.ev)
       .forEach(x => { if (out.length < APP.value && !used.has(x.b.ref.id)) { used.add(x.b.ref.id); out.push({ id: x.b.id, odd: +x.odd.toFixed(2), kind: 'valeur', pm: x.pm, b: x.b }); } });
     const nV = out.length;
     all.filter(b => ok(b) && 1 / b.p >= APP.minOdd && 1 / b.p <= APP.maxOdd).sort((x, y) => y.score - x.score)
@@ -440,7 +450,8 @@ App.engine = (() => {
     const top = r.top.map(b => betOut(b, idx.get(b.a)));
     const others = [];
     // on garde 30 paris par match : de quoi refaire un classement par fourchette de cotes
-    r.analyses.forEach(a => r.all.filter(b => b.a === a).slice(0, 30).forEach(b => others.push(betOut(b, idx.get(a)))));
+    // + tous les paris comparables aux bookmakers (1N2, double chance, ±2,5 buts) pour le filtre « paris qui rapportent »
+    r.analyses.forEach(a => r.all.filter(b => b.a === a).filter((b, i) => i < 30 || marketP(b) !== null).forEach(b => others.push(betOut(b, idx.get(a)))));
     const cmb = list => list.map(c => ({ p: c.p, conf: c.conf, id: c.id, legs: c.legs.map(l => r.top.indexOf(l)) }));
     const app = (r.app || []).map(({ b, ...x }) => ({ ...x, bet: betOut(b, idx.get(b.a)) }));
     return { W: r.W, ranAt: r.ranAt, auto: !!r.auto, analyses, top, others, app, combos: { doubles: cmb(r.combos.doubles), triples: cmb(r.combos.triples),
@@ -511,5 +522,5 @@ App.engine = (() => {
     return v.played;
   }
 
-  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed, appPicks, SAFE_F };
+  return { run, settleAll, settings, saveHistory, saveRemote, loadRemote, live, togglePlayed, appPicks, SAFE_F, valueOf };
 })();

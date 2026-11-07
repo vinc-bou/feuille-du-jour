@@ -270,3 +270,5 @@ tr.detail td { background: var(--panel); padding: 12px 16px 14px 50px; }
 .akind.valeur { color: var(--accent); border-color: var(--accent); }
 .mine.appb { background: var(--text); }
 .notes .appn { color: var(--accent); }
+
+.notes .valn { color: var(--win); }

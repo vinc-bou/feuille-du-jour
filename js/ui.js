@@ -4,7 +4,7 @@
   const $ = s => document.querySelector(s);
   const view = $('#view');
   const SP = { soccer: 'Foot', tennis: 'Tennis', basket: 'Basket', hockey: 'Hockey', handball: 'Handball', volley: 'Volley', rugby: 'Rugby' };
-  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '', mine: '' }, open: null,
+  const state = { tab: 'top', day: 0, result: null, running: false, alerts: [], filters: { sport: '', comp: '', group: '', time: '', q: '', oddMin: '', oddMax: '', mine: '', value: '' }, open: null,
     sort: 'rel', rev: false, hv: { per: 'yday', day: null, cal: null }, live: {}, played: new Set(), liveMine: false, q: '', hopen: null, cfilters: { oddMin: '', oddMax: '', sort: 'rel' } };
   // Tri (Sélection) : [nom, ordre normal, ordre inversé, comparaison dans l'ordre normal]
   // Un clic sur un titre de colonne trie ; un 2e clic sur la même colonne inverse l'ordre.
@@ -188,6 +188,14 @@
     const odds = f.oddMin || f.oddMax;
     if (!odds) state.result.top.forEach(b => { b.vr = b.rank; });
     let base = odds ? rerank(f) : state.result.top;
+    if (f.value) {
+      // paris qui rapportent : gain moyen attendu d'au moins +2 %, du meilleur au moins bon, un par match au plus deux
+      const seen = new Set(), per = {};
+      base = [...state.result.top, ...state.result.all].filter(b => !seen.has(b.id) && seen.add(b.id))
+        .map(b => { b.val = App.engine.valueOf(b); return b; }).filter(b => b.val && b.val.ev >= 1.02 && b.ts > Date.now() - 2 * 3600000 && oddOk(b.p, f))
+        .sort((x, y) => y.val.ev - x.val.ev).filter(b => (per[b.ref.id] = (per[b.ref.id] || 0) + 1) <= 2);
+      base.forEach((b, i) => { b.vr = i + 1; });
+    }
     if (f.mine) { const seen = new Set(); base = [...base, ...state.result.all].filter(b => state.played.has(b.id) && !seen.has(b.id) && seen.add(b.id)); base.forEach(b => { if (b.vr === undefined) b.vr = b.rank || 999; }); }
     return base.filter(b => {
       if (f.sport && b.sport !== f.sport) return false;
@@ -262,12 +270,14 @@
       <select data-f="time">${options([['a', 'Avant 15 h'], ['b', '15 h - 19 h'], ['c', '19 h - 23 h'], ['n', 'Nuit (23 h - 6 h)']], f.time, 'Toute la journée')}</select>
       <select data-f="oddMin">${options(ODDS.map(o => [String(o), 'Cote dès ' + t.num(o, 2)]), f.oddMin, 'Cote : pas de minimum')}</select>
       <select data-f="oddMax">${options(ODDS.map(o => [String(o), 'Cote jusqu’à ' + t.num(o, 2)]), f.oddMax, 'Cote : pas de maximum')}</select>
+      <select data-f="value" class="${f.value ? 'sortsel' : ''}">${options([['1', 'Paris qui rapportent']], f.value, 'Paris les plus fiables')}</select>
       <select data-f="mine">${options([['1', `Mes paris joués (${state.played.size})`]], f.mine, 'Tous les paris')}</select>
       <input data-f="q" placeholder="Équipe, joueur…" value="${esc(f.q)}">
       <select data-sort-sel="top" class="sortsel">${Object.entries(SORTS).filter(([k]) => k !== 'res' || r.replay).map(([k, v]) => [0, 1].map(rv => `<option value="${k}|${rv}" ${k === state.sort && !!rv === state.rev ? 'selected' : ''}>Trier : ${v[0]} (${v[1 + rv]})</option>`).join('')).join('')}</select>
       <span class="count">${rows.length} pari${rows.length > 1 ? 's' : ''}${f.oddMin || f.oddMax ? ' dans cette fourchette de cotes' : ''} · ${r.analyses.length} matchs analysés</span>
     </div>`;
-    if (!rows.length) return html + `<div class="empty">Aucun pari ne correspond à ces filtres.</div>`;
+    if (f.value) html += `<p class="why"><b>Paris qui rapportent</b>Ici, l’app ne classe plus par fiabilité mais par gain attendu : ce sont les paris où la cote probable chez les bookmakers est plus haute que la cote mini de l’app. Exemple : +8 % veut dire qu’en moyenne, 100 € misés sur ce type de pari rapportent 108 €. Jouez-le seulement si Winamax propose au moins la cote mini. Pour l’instant, seuls les matchs de foot avec des cotes de bookmakers connues peuvent être évalués (1N2, double chance, plus ou moins de 2,5 buts).</p>`;
+    if (!rows.length) return html + `<div class="empty">${f.value ? 'Aucun pari qui rapporte n’a été trouvé pour cette journée (ou avec ces filtres).' : 'Aucun pari ne correspond à ces filtres.'}</div>`;
     const th = (k, txt, st) => `<th data-sort="${k}" class="${state.sort === k ? 'sorted' : ''}" ${st ? `style="${st}"` : ''} title="Trier (cliquer à nouveau pour inverser)">${txt}${state.sort === k ? (state.rev ? ' ▲' : ' ▼') : ''}</th>`;
     html += `<table class="grid"><thead><tr><th class="pl" title="Cochez les paris que vous jouez">Joué</th><th style="text-align:right">#</th>${th('time', 'Heure')}${th('comp', 'Compétition')}${th('match', 'Match')}${th('group', 'Pari')}${th('rel', 'Fiabilité')}${th('odd', 'Cote mini')}${th('conf', 'Confiance')}<th>À savoir</th>${r.replay ? th('res', 'Résultat') : ''}</tr></thead><tbody>`;
     const aIds = appIds();
@@ -283,7 +293,7 @@
         <td class="rel"><span class="v num">${t.pct(b.p)}</span><div class="bar"><div style="width:${Math.round(b.p * 100)}%"></div></div></td>
         <td class="odd num">${t.odd(b.p)}</td>
         <td class="conf ${confCls(b.conf)}"><i></i>${confTxt(b.conf)}</td>
-        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${aIds.has(b.id) ? '<span class="appn">Joué par l’app</span>' : ''}${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
+        <td class="notes" data-meta="${esc(d.hm(b.ts) + ' · ' + b.comp)}">${f.value && b.val ? `<span class="valn">≈ ${t.num(b.val.odd, 2)} chez les bookmakers · +${Math.round((b.val.ev - 1) * 100)} %</span>` : ''}${aIds.has(b.id) ? '<span class="appn">Joué par l’app</span>' : ''}${betAlert(b) ? '<span class="trap">Alerte compo</span>' : ''}${[...b.notes, ...b.a.tags.filter(x => !b.notes.includes(x) && x !== 'Match piège')].slice(0, 3).map(n => `<span class="${n === 'Match piège' ? 'trap' : ''}">${esc(n)}</span>`).join('')}</td>
         ${r.replay ? `<td class="res res-${b.result}">${RES[b.result] || ''}<div style="color:var(--dim);font-size:12px">${esc(realScore(b.a))}</div></td>` : ''}
       </tr>`;
       if (open) html += `<tr class="detail"><td colspan="11">${detailHtml(b.a, b.id)}</td></tr>`;
