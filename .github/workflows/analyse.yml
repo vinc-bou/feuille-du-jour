@@ -5,6 +5,14 @@ on:
   schedule:
     - cron: '10 22 * * *'   # 00 h 10 en heure d'été (UTC+2)
     - cron: '10 23 * * *'   # 00 h 10 en heure d'hiver (UTC+1)
+    # GitHub retarde parfois les tâches planifiées de plusieurs heures : déclenchements de secours,
+    # chacun ne fait rien si l'analyse du jour est déjà publiée
+    - cron: '40 23 * * *'
+    - cron: '25 0 * * *'
+    - cron: '25 1 * * *'
+    - cron: '25 2 * * *'
+    - cron: '25 3 * * *'
+    - cron: '25 4 * * *'
   workflow_dispatch: {}      # bouton « Run workflow » pour lancer à la main
 
 permissions:
@@ -24,18 +32,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Est-ce bien minuit à Paris ?
+      - uses: actions/checkout@v4
+
+      - name: Analyse du jour déjà faite ?
         id: heure
         run: |
           h=$(date +%H)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$h" = "00" ] || [ "$h" = "01" ]; then
+          jour=$(date +%Y%m%d)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "go=1" >> "$GITHUB_OUTPUT"
+          elif [ "$h" -ge 7 ] && [ "$h" -le 22 ]; then
+            echo "Il est $h h à Paris : hors de la plage de nuit (0 h - 7 h), on passe."
+          elif [ "$h" -eq 23 ]; then
+            echo "Il est 23 h à Paris (heure d'été/hiver) : trop tôt, on passe."
+          elif [ -f "en-ligne/$jour.json" ]; then
+            echo "Analyse du $jour déjà publiée, rien à faire."
           else
-            echo "Il est $h h à Paris : ce déclenchement n'est pas le bon (changement d'heure), on passe."
+            echo "Il est $h h à Paris et l'analyse du $jour n'est pas faite : on lance."
+            echo "go=1" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.heure.outputs.go == '1'
 
       - uses: actions/setup-python@v5
         if: steps.heure.outputs.go == '1'
